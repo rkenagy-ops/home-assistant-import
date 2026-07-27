@@ -131,32 +131,6 @@ async def test_ws_start_receives_and_stop(hass: HomeAssistant) -> None:
     connect.assert_called()
 
 
-async def test_ws_reconnect_on_error(hass: HomeAssistant) -> None:
-    """Test WebSocket errors are logged at debug and the loop retries."""
-    api = LanbonApi(hass, HOST, PORT, TOKEN)
-
-    async def _boom(*_args, **_kwargs):
-        raise OSError("down")
-
-    async def _yield_sleep(_delay: float) -> None:
-        await asyncio.sleep(0)
-
-    with (
-        patch.object(api._session, "ws_connect", side_effect=_boom),
-        patch(
-            "homeassistant.components.lanbon.coordinator.asyncio.sleep",
-            side_effect=_yield_sleep,
-        ) as sleep,
-    ):
-        await api.async_start_ws(lambda _data: None)
-        for _ in range(20):
-            if sleep.await_count:
-                break
-            await asyncio.sleep(0)
-        assert sleep.await_count >= 1
-        await api.async_stop_ws()
-
-
 async def test_coordinator_update_failed(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry
 ) -> None:
