@@ -83,3 +83,32 @@ async def test_initial_states(
     assert hass.states.get(living).state == STATE_ON
     assert hass.states.get(kitchen).state == STATE_OFF
     assert hass.states.get(child).state == STATE_OFF
+
+
+async def test_switch_unavailable_when_coordinator_fails(
+    hass: HomeAssistant,
+    setup_integration: MockConfigEntry,
+    entity_registry: er.EntityRegistry,
+) -> None:
+    """Coordinator failure marks switches unavailable."""
+    entry = setup_integration
+    living = _entity_id(entity_registry, f"{MAC}_0")
+    entry.runtime_data.coordinator.last_update_success = False
+    entry.runtime_data.coordinator.async_update_listeners()
+    await hass.async_block_till_done()
+    assert hass.states.get(living).state == "unavailable"
+
+
+async def test_registry_rename_ignores_other_domains(
+    hass: HomeAssistant,
+    setup_integration: MockConfigEntry,
+    mock_api: AsyncMock,
+) -> None:
+    """Registry updates for non-switch entities are ignored."""
+    mock_api.async_command.reset_mock()
+    hass.bus.async_fire(
+        er.EVENT_ENTITY_REGISTRY_UPDATED,
+        {"action": "create", "entity_id": "light.x", "changes": {}},
+    )
+    await hass.async_block_till_done()
+    mock_api.async_command.assert_not_awaited()

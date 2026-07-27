@@ -218,6 +218,24 @@ async def test_zeroconf_flow(hass: HomeAssistant) -> None:
     assert result["data"]["mac"] == MAC
 
 
+async def test_zeroconf_invalid_sw_type(hass: HomeAssistant) -> None:
+    """Test discovery tolerates a non-integer sw_type property."""
+    discovery = ZeroconfServiceInfo(
+        ip_address=ip_address(HOST),
+        ip_addresses=[ip_address(HOST)],
+        port=PORT,
+        hostname="lanbon.local.",
+        type="_lanbon._tcp.local.",
+        name="4gang Switch._lanbon._tcp.local.",
+        properties={"mac": MAC.lower(), "token": TOKEN, "sw_type": "not-int"},
+    )
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_ZEROCONF}, data=discovery
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "discovery_confirm"
+
+
 async def test_zeroconf_invalid_auth(hass: HomeAssistant) -> None:
     """Test discovery confirm with invalid token."""
     discovery = ZeroconfServiceInfo(
