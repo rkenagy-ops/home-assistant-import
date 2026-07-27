@@ -1,5 +1,4 @@
 """Tests for the LANBON integration config flow."""
-from __future__ import annotations
 
 from collections.abc import Generator
 from ipaddress import ip_address
@@ -7,9 +6,9 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from homeassistant.components.lanbon.const import CONF_TOKEN, DOMAIN
+from homeassistant.components.lanbon.const import DOMAIN
 from homeassistant.config_entries import SOURCE_USER, SOURCE_ZEROCONF
-from homeassistant.const import CONF_HOST, CONF_PORT
+from homeassistant.const import CONF_HOST, CONF_PORT, CONF_TOKEN
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo

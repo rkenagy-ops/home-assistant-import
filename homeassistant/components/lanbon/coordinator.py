@@ -1,24 +1,30 @@
-"""LANBON API client + DataUpdateCoordinator."""
-from __future__ import annotations
+"""LANBON API client and DataUpdateCoordinator."""
 
 import asyncio
+from contextlib import suppress
+from datetime import timedelta
 import json
 import logging
-from typing import Any
+from typing import Any, override
 
 import aiohttp
 
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import DEFAULT_PORT, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
+_TIMEOUT = aiohttp.ClientTimeout(total=8)
+
 
 class LanbonApi:
+    """HTTP/WebSocket client for the LANBON Mesh root local API."""
+
     def __init__(self, hass: HomeAssistant, host: str, port: int, token: str) -> None:
+        """Initialize the API client."""
         self.hass = hass
         self.host = host
         self.port = port or DEFAULT_PORT
@@ -29,14 +35,16 @@ class LanbonApi:
 
     @property
     def base(self) -> str:
+        """Return the HTTP base URL."""
         return f"http://{self.host}:{self.port}"
 
     def _headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.token}"}
 
     async def async_get_info(self) -> dict[str, Any]:
+        """Fetch host info."""
         async with self._session.get(
-            f"{self.base}/api/v1/info", headers=self._headers(), timeout=8
+            f"{self.base}/api/v1/info", headers=self._headers(), timeout=_TIMEOUT
         ) as resp:
             if resp.status == 401:
                 raise PermissionError("invalid token")
@@ -44,8 +52,9 @@ class LanbonApi:
             return await resp.json(content_type=None)
 
     async def async_get_devices(self) -> dict[str, Any]:
+        """Fetch host and child device snapshot."""
         async with self._session.get(
-            f"{self.base}/api/v1/devices", headers=self._headers(), timeout=8
+            f"{self.base}/api/v1/devices", headers=self._headers(), timeout=_TIMEOUT
         ) as resp:
             if resp.status == 401:
                 raise PermissionError("invalid token")
@@ -53,11 +62,12 @@ class LanbonApi:
             return await resp.json(content_type=None)
 
     async def async_command(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Send a command to the Mesh root."""
         async with self._session.post(
             f"{self.base}/api/v1/command",
             headers={**self._headers(), "Content-Type": "application/json"},
             data=json.dumps(payload),
-            timeout=8,
+            timeout=_TIMEOUT,
         ) as resp:
             if resp.status == 401:
                 raise PermissionError("invalid token")
@@ -65,21 +75,22 @@ class LanbonApi:
             return await resp.json(content_type=None)
 
     def add_listener(self, cb) -> None:
+        """Register a WebSocket message listener."""
         self._listeners.append(cb)
 
     async def async_start_ws(self, on_message) -> None:
+        """Start the WebSocket listener loop."""
         self.add_listener(on_message)
         if self._ws_task and not self._ws_task.done():
             return
         self._ws_task = self.hass.async_create_task(self._ws_loop())
 
     async def async_stop_ws(self) -> None:
+        """Stop the WebSocket listener loop."""
         if self._ws_task:
             self._ws_task.cancel()
-            try:
+            with suppress(asyncio.CancelledError):
                 await self._ws_task
-            except asyncio.CancelledError:
-                pass
             self._ws_task = None
 
     async def _ws_loop(self) -> None:
@@ -109,29 +120,30 @@ class LanbonApi:
 
 
 class LanbonCoordinator(DataUpdateCoordinator[dict[str, Any]]):
+    """Coordinator for LANBON device state."""
+
     def __init__(self, hass: HomeAssistant, api: LanbonApi) -> None:
+        """Initialize the coordinator."""
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
-            update_interval=None,  # push via WS; poll as fallback below
+            update_interval=timedelta(seconds=30),
         )
         self.api = api
-        from datetime import timedelta
 
-        self.update_interval = timedelta(seconds=30)
-
+    @override
     async def _async_update_data(self) -> dict[str, Any]:
         try:
             return await self.api.async_get_devices()
         except PermissionError as err:
             raise UpdateFailed(str(err)) from err
-        except Exception as err:  # noqa: BLE001
+        except Exception as err:
             raise UpdateFailed(str(err)) from err
 
     def handle_ws(self, data: dict[str, Any]) -> None:
+        """Handle a WebSocket state push."""
         if not isinstance(data, dict):
             return
         if data.get("type") == "state" or "devices" in data:
-            # Ensure coordinator update runs on HA event loop
             self.hass.loop.call_soon_threadsafe(self.async_set_updated_data, data)

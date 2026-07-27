@@ -1,0 +1,7 @@
+{
+  "services": {
+    "set_channel_name": {
+      "service": "mdi:form-textbox"
+    }
+  }
+}

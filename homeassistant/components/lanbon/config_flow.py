@@ -1,23 +1,24 @@
 """Config flow for LANBON."""
-from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, override
 
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
-from homeassistant.const import CONF_HOST, CONF_PORT
+from homeassistant.const import CONF_HOST, CONF_PORT, CONF_TOKEN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 
-from .const import CONF_TOKEN, DEFAULT_PORT, DOMAIN
+from .const import DEFAULT_PORT, DOMAIN
 from .coordinator import LanbonApi
 
 _LOGGER = logging.getLogger(__name__)
 
 
-async def _validate(hass: HomeAssistant, host: str, port: int, token: str) -> dict[str, Any]:
+async def _validate(
+    hass: HomeAssistant, host: str, port: int, token: str
+) -> dict[str, Any]:
     """Validate connectivity and authentication to the Mesh root API."""
     api = LanbonApi(hass, host, port, token)
     return await api.async_get_info()
@@ -39,9 +40,13 @@ class LanbonConfigFlow(ConfigFlow, domain=DOMAIN):
 
     def _set_type_name(self, name: Any | None) -> None:
         text = str(name).strip() if name is not None else ""
-        self._type_name = text if text else "LANBON"
+        self._type_name = text or "LANBON"
         self.context["title_placeholders"] = {"name": self._type_name}
 
+    def _is_root(self, info: dict[str, Any]) -> bool:
+        return info.get("is_root") is True
+
+    @override
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -55,11 +60,11 @@ class LanbonConfigFlow(ConfigFlow, domain=DOMAIN):
                 info = await _validate(self.hass, host, port, token)
             except PermissionError:
                 errors["base"] = "invalid_auth"
-            except Exception:  # noqa: BLE001
+            except Exception:
                 _LOGGER.exception("LANBON connect failed")
                 errors["base"] = "cannot_connect"
             else:
-                if info.get("is_root") is False:
+                if not self._is_root(info):
                     errors["base"] = "not_root"
                 else:
                     mac = str(info.get("mac", host)).upper()
@@ -93,6 +98,7 @@ class LanbonConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
+    @override
     async def async_step_zeroconf(
         self, discovery_info: ZeroconfServiceInfo
     ) -> ConfigFlowResult:
@@ -108,11 +114,10 @@ class LanbonConfigFlow(ConfigFlow, domain=DOMAIN):
         }
         self._mac = (str(norm.get("mac") or "")).upper() or None
         self._token = str(norm.get("token") or "")
+        sw_type_raw = norm.get("sw_type")
         try:
-            self._sw_type = (
-                int(norm.get("sw_type")) if norm.get("sw_type") is not None else None
-            )
-        except (TypeError, ValueError):
+            self._sw_type = int(str(sw_type_raw)) if sw_type_raw is not None else None
+        except TypeError, ValueError:
             self._sw_type = None
         self._set_type_name(norm.get("type_name") or discovery_info.name.split(".")[0])
 
@@ -134,11 +139,11 @@ class LanbonConfigFlow(ConfigFlow, domain=DOMAIN):
                 info = await _validate(self.hass, self._host or "", self._port, token)
             except PermissionError:
                 errors["base"] = "invalid_auth"
-            except Exception:  # noqa: BLE001
+            except Exception:
                 _LOGGER.exception("LANBON connect failed")
                 errors["base"] = "cannot_connect"
             else:
-                if info.get("is_root") is False:
+                if not self._is_root(info):
                     errors["base"] = "not_root"
                 else:
                     mac = str(info.get("mac") or self._mac or "").upper()
