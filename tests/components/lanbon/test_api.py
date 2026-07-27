@@ -167,12 +167,16 @@ async def test_coordinator_update_failed(
     mock_config_entry.add_to_hass(hass)
     api = LanbonApi(hass, HOST, PORT, TOKEN)
     coordinator = LanbonCoordinator(hass, mock_config_entry, api)
-    with patch.object(api, "async_get_devices", side_effect=PermissionError("bad")):
-        with pytest.raises(UpdateFailed):
-            await coordinator._async_update_data()
-    with patch.object(api, "async_get_devices", side_effect=OSError("down")):
-        with pytest.raises(UpdateFailed):
-            await coordinator._async_update_data()
+    with (
+        patch.object(api, "async_get_devices", side_effect=PermissionError("bad")),
+        pytest.raises(UpdateFailed),
+    ):
+        await coordinator._async_update_data()
+    with (
+        patch.object(api, "async_get_devices", side_effect=OSError("down")),
+        pytest.raises(UpdateFailed),
+    ):
+        await coordinator._async_update_data()
 
 
 async def test_handle_ws_ignores_non_state(
