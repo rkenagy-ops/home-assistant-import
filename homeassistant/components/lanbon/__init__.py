@@ -91,7 +91,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: LanbonConfigEntry) -> bo
     port = entry.data.get(CONF_PORT, 8765)
     token = entry.data[CONF_TOKEN]
     api = LanbonApi(hass, host, port, token)
-    coordinator = LanbonCoordinator(hass, api)
+    coordinator = LanbonCoordinator(hass, entry, api)
     await coordinator.async_config_entry_first_refresh()
 
     entry.runtime_data = LanbonRuntimeData(api=api, coordinator=coordinator)

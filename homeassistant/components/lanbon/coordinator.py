@@ -11,6 +11,7 @@ import aiohttp
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -126,11 +127,16 @@ class LanbonApi:
 class LanbonCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator for LANBON device state."""
 
-    def __init__(self, hass: HomeAssistant, api: LanbonApi) -> None:
+    config_entry: ConfigEntry
+
+    def __init__(
+        self, hass: HomeAssistant, config_entry: ConfigEntry, api: LanbonApi
+    ) -> None:
         """Initialize the coordinator."""
         super().__init__(
             hass,
             _LOGGER,
+            config_entry=config_entry,
             name=DOMAIN,
             update_interval=timedelta(seconds=30),
         )
