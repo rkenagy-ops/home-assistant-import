@@ -2,26 +2,26 @@ rules:
   # Bronze
   action-setup:
     status: done
-    comment: Service registered in async_setup; removed when last entry unloads.
+    comment: Service registered in async_setup and kept registered across entry unload/reload.
   appropriate-polling:
     status: done
     comment: WebSocket push primary; 30s HTTP poll fallback.
   brands:
     status: done
-    comment: Icons prepared; core_integrations brands PR after Core acceptance.
+    comment: https://github.com/home-assistant/brands/pull/10854
   common-modules:
     status: done
     comment: coordinator.py holds API client and DataUpdateCoordinator.
   config-flow: done
   config-flow-test-coverage:
     status: done
-    comment: tests/components/lanbon/test_config_flow.py
+    comment: tests/components/lanbon/test_config_flow.py covers user and discovery success, recovery, and error paths.
   dependency-transparency:
     status: done
-    comment: No PyPI deps; aiohttp via Home Assistant.
+    comment: No third-party PyPI dependency; uses aiohttp via Home Assistant.
   docs-actions:
     status: done
-    comment: set_channel_name documented in home-assistant.io draft.
+    comment: set_channel_name documented in home-assistant.io.
   docs-conditions:
     status: exempt
     comment: No conditions.

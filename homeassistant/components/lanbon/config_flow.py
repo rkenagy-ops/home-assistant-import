@@ -10,7 +10,7 @@ from homeassistant.const import CONF_HOST, CONF_PORT, CONF_TOKEN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 
-from .const import DEFAULT_PORT, DOMAIN
+from .const import DEFAULT_PORT, DOMAIN, SUPPORTED_PROTO
 from .coordinator import LanbonApi
 
 _LOGGER = logging.getLogger(__name__)
@@ -46,6 +46,56 @@ class LanbonConfigFlow(ConfigFlow, domain=DOMAIN):
     def _is_root(self, info: dict[str, Any]) -> bool:
         return info.get("is_root") is True
 
+    def _proto_supported(self, info: dict[str, Any]) -> bool:
+        return info.get("proto") == SUPPORTED_PROTO
+
+    async def _async_validate_and_create(
+        self,
+        host: str,
+        port: int,
+        token: str,
+        errors: dict[str, str],
+    ) -> ConfigFlowResult | None:
+        """Validate the host and create an entry, or fill errors."""
+        try:
+            info = await _validate(self.hass, host, port, token)
+        except PermissionError:
+            errors["base"] = "invalid_auth"
+            return None
+        except Exception:
+            _LOGGER.exception("LANBON connect failed")
+            errors["base"] = "cannot_connect"
+            return None
+
+        if not self._proto_supported(info):
+            errors["base"] = "unsupported_proto"
+            return None
+        if not self._is_root(info):
+            errors["base"] = "not_root"
+            return None
+
+        mac = str(info.get("mac") or self._mac or host).upper()
+        if info.get("sw_type") is not None:
+            self._sw_type = info.get("sw_type")
+        self._set_type_name(
+            info.get("type_name") or info.get("name") or self._type_name
+        )
+        await self.async_set_unique_id(mac)
+        self._abort_if_unique_id_configured(
+            updates={CONF_HOST: host, CONF_PORT: port}
+        )
+        return self.async_create_entry(
+            title=self._type_name,
+            data={
+                CONF_HOST: host,
+                CONF_PORT: port,
+                CONF_TOKEN: token,
+                "mac": mac,
+                "sw_type": self._sw_type,
+                "type_name": self._type_name,
+            },
+        )
+
     @override
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -56,35 +106,9 @@ class LanbonConfigFlow(ConfigFlow, domain=DOMAIN):
             host = user_input[CONF_HOST]
             port = int(user_input.get(CONF_PORT, DEFAULT_PORT))
             token = user_input[CONF_TOKEN]
-            try:
-                info = await _validate(self.hass, host, port, token)
-            except PermissionError:
-                errors["base"] = "invalid_auth"
-            except Exception:
-                _LOGGER.exception("LANBON connect failed")
-                errors["base"] = "cannot_connect"
-            else:
-                if not self._is_root(info):
-                    errors["base"] = "not_root"
-                else:
-                    mac = str(info.get("mac", host)).upper()
-                    self._sw_type = info.get("sw_type")
-                    self._set_type_name(info.get("type_name") or info.get("name"))
-                    await self.async_set_unique_id(mac)
-                    self._abort_if_unique_id_configured(
-                        updates={CONF_HOST: host, CONF_PORT: port}
-                    )
-                    return self.async_create_entry(
-                        title=self._type_name,
-                        data={
-                            CONF_HOST: host,
-                            CONF_PORT: port,
-                            CONF_TOKEN: token,
-                            "mac": mac,
-                            "sw_type": self._sw_type,
-                            "type_name": self._type_name,
-                        },
-                    )
+            result = await self._async_validate_and_create(host, port, token, errors)
+            if result is not None:
+                return result
 
         return self.async_show_form(
             step_id="user",
@@ -117,7 +141,7 @@ class LanbonConfigFlow(ConfigFlow, domain=DOMAIN):
         sw_type_raw = norm.get("sw_type")
         try:
             self._sw_type = int(str(sw_type_raw)) if sw_type_raw is not None else None
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             self._sw_type = None
         self._set_type_name(norm.get("type_name") or discovery_info.name.split(".")[0])
 
@@ -135,38 +159,11 @@ class LanbonConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         if user_input is not None:
             token = user_input.get(CONF_TOKEN) or self._token
-            try:
-                info = await _validate(self.hass, self._host or "", self._port, token)
-            except PermissionError:
-                errors["base"] = "invalid_auth"
-            except Exception:
-                _LOGGER.exception("LANBON connect failed")
-                errors["base"] = "cannot_connect"
-            else:
-                if not self._is_root(info):
-                    errors["base"] = "not_root"
-                else:
-                    mac = str(info.get("mac") or self._mac or "").upper()
-                    if info.get("sw_type") is not None:
-                        self._sw_type = info.get("sw_type")
-                    self._set_type_name(
-                        info.get("type_name") or info.get("name") or self._type_name
-                    )
-                    await self.async_set_unique_id(mac)
-                    self._abort_if_unique_id_configured(
-                        updates={CONF_HOST: self._host, CONF_PORT: self._port}
-                    )
-                    return self.async_create_entry(
-                        title=self._type_name,
-                        data={
-                            CONF_HOST: self._host,
-                            CONF_PORT: self._port,
-                            CONF_TOKEN: token,
-                            "mac": mac,
-                            "sw_type": self._sw_type,
-                            "type_name": self._type_name,
-                        },
-                    )
+            result = await self._async_validate_and_create(
+                self._host or "", self._port, token, errors
+            )
+            if result is not None:
+                return result
 
         self._set_type_name(self._type_name)
         return self.async_show_form(

@@ -10,6 +10,7 @@ from typing import Any, override
 import aiohttp
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -72,7 +73,10 @@ class LanbonApi:
             if resp.status == 401:
                 raise PermissionError("invalid token")
             resp.raise_for_status()
-            return await resp.json(content_type=None)
+            data = await resp.json(content_type=None)
+            if isinstance(data, dict) and data.get("ok") is False:
+                raise HomeAssistantError(str(data.get("err") or "command failed"))
+            return data
 
     def add_listener(self, cb) -> None:
         """Register a WebSocket message listener."""
@@ -98,7 +102,9 @@ class LanbonApi:
         while True:
             try:
                 async with self._session.ws_connect(url, heartbeat=30) as ws:
-                    _LOGGER.debug("LANBON WS connected %s", url)
+                    _LOGGER.debug(
+                        "LANBON WS connected %s:%s", self.host, self.port
+                    )
                     async for msg in ws:
                         if msg.type == aiohttp.WSMsgType.TEXT:
                             try:
@@ -115,7 +121,7 @@ class LanbonApi:
             except asyncio.CancelledError:
                 raise
             except Exception as err:  # noqa: BLE001
-                _LOGGER.warning("LANBON WS error: %s", err)
+                _LOGGER.debug("LANBON WS error: %s", err)
             await asyncio.sleep(5)
 
 

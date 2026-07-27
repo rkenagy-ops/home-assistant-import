@@ -4,7 +4,7 @@ from typing import Any, override
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -32,6 +32,12 @@ async def async_setup_entry(
     """Set up LANBON switch entities from a config entry."""
     coordinator = entry.runtime_data.coordinator
     api = entry.runtime_data.api
+    registry = dr.async_get(hass)
+
+    host = (coordinator.data or {}).get("host") or {}
+    hub_mac = str(host.get("mac") or "").upper()
+    hub = registry.async_get_device({(DOMAIN, hub_mac)}) if hub_mac else None
+    hub_id = hub.id if hub else None
 
     entities: list[LanbonSwitch] = []
     for dev in (coordinator.data or {}).get("devices") or []:
@@ -42,6 +48,7 @@ async def async_setup_entry(
         if kind not in ("switch", "cover_switch"):
             continue
         mac = str(dev.get("mac") or "").upper()
+        is_host = bool(dev.get("is_host"))
         for idx, _val in enumerate(switches):
             entities.append(
                 LanbonSwitch(
@@ -50,7 +57,8 @@ async def async_setup_entry(
                     mac=mac,
                     index=idx,
                     channel_name=_channel_name(dev, idx),
-                    is_host=bool(dev.get("is_host")),
+                    is_host=is_host,
+                    via_device_id=None if is_host else hub_id,
                 )
             )
     async_add_entities(entities)
@@ -70,6 +78,7 @@ class LanbonSwitch(CoordinatorEntity[LanbonCoordinator], SwitchEntity):
         index: int,
         channel_name: str | None,
         is_host: bool,
+        via_device_id: str | None,
     ) -> None:
         """Initialize the switch."""
         super().__init__(coordinator)
@@ -79,21 +88,14 @@ class LanbonSwitch(CoordinatorEntity[LanbonCoordinator], SwitchEntity):
         self._attr_unique_id = f"{mac}_{index}"
         self._attr_name = channel_name or f"Switch {index + 1}"
         self._suppress_registry_push = False
-        host = (coordinator.data or {}).get("host") or {}
-        hub_mac = str(host.get("mac") or "").upper()
-        if (not is_host) and hub_mac:
-            self._attr_device_info = DeviceInfo(
-                identifiers={(DOMAIN, mac)},
-                manufacturer="LANBON",
-                name=f"LANBON {mac[-4:]}",
-                via_device=(DOMAIN, hub_mac),
-            )
-        else:
-            self._attr_device_info = DeviceInfo(
-                identifiers={(DOMAIN, mac)},
-                manufacturer="LANBON",
-                name="LANBON Host" if is_host else f"LANBON {mac[-4:]}",
-            )
+        device_info = DeviceInfo(
+            identifiers={(DOMAIN, mac)},
+            manufacturer="LANBON",
+            name="LANBON Host" if is_host else f"LANBON {mac[-4:]}",
+        )
+        if via_device_id is not None:
+            device_info["via_device_id"] = via_device_id
+        self._attr_device_info = device_info
 
     def _dev(self) -> dict[str, Any] | None:
         for d in (self.coordinator.data or {}).get("devices") or []:
@@ -112,14 +114,9 @@ class LanbonSwitch(CoordinatorEntity[LanbonCoordinator], SwitchEntity):
     @callback
     @override
     def _handle_coordinator_update(self) -> None:
-        changed = self._apply_channel_name(_channel_name(self._dev(), self._index))
-        if changed and self.entity_id:
-            registry = er.async_get(self.hass)
-            entry = registry.async_get(self.entity_id)
-            if entry is not None and entry.name != self._attr_name:
-                self._suppress_registry_push = True
-                registry.async_update_entity(self.entity_id, name=self._attr_name)
-                self._suppress_registry_push = False
+        # Only refresh the device-provided default name; never overwrite a
+        # user registry override (RegistryEntry.name).
+        self._apply_channel_name(_channel_name(self._dev(), self._index))
         super()._handle_coordinator_update()
 
     async def async_set_channel_name(self, name: str) -> None:
@@ -139,6 +136,8 @@ class LanbonSwitch(CoordinatorEntity[LanbonCoordinator], SwitchEntity):
     @override
     def available(self) -> bool:
         """Return True if entity is available."""
+        if not super().available:
+            return False
         dev = self._dev()
         return bool(dev and dev.get("available", True))
 

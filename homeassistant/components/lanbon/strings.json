@@ -7,7 +7,8 @@
       "cannot_connect": "Cannot connect to the LANBON host",
       "invalid_auth": "Invalid token",
       "not_root": "Device is not Mesh root — only the root panel exposes the local API",
-      "unknown": "Unexpected error"
+      "unknown": "Unexpected error",
+      "unsupported_proto": "Unsupported LANBON API protocol version"
     },
     "step": {
       "discovery_confirm": {

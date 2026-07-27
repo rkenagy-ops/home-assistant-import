@@ -5,7 +5,7 @@ import logging
 
 import voluptuous as vol
 
-from homeassistant.config_entries import ConfigEntry, ConfigEntryState
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     ATTR_ENTITY_ID,
     CONF_HOST,
@@ -14,6 +14,7 @@ from homeassistant.const import (
     Platform,
 )
 from homeassistant.core import HomeAssistant, ServiceCall, callback
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import (
     config_validation as cv,
     device_registry as dr,
@@ -70,10 +71,9 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         for entity_id in call.data[ATTR_ENTITY_ID]:
             ent = _find_switch(hass, entity_id)
             if ent is None:
-                _LOGGER.warning(
-                    "Set channel name skipped: %s is not a LANBON switch", entity_id
+                raise ServiceValidationError(
+                    f"{entity_id} is not a loaded LANBON switch"
                 )
-                continue
             await ent.async_set_channel_name(name)
 
     hass.services.async_register(
@@ -103,7 +103,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: LanbonConfigEntry) -> bo
         host_mac = str(host_info.get("mac") or host).upper()
 
     registry = dr.async_get(hass)
-    registry.async_get_or_create(
+    hub = registry.async_get_or_create(
         config_entry_id=entry.entry_id,
         identifiers={(DOMAIN, host_mac)},
         manufacturer="LANBON",
@@ -121,11 +121,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: LanbonConfigEntry) -> bo
             manufacturer="LANBON",
             name=dev.get("name") or f"LANBON {mac[-4:]}",
             model=str(dev.get("kind") or "node"),
-            via_device=(DOMAIN, host_mac),
+            via_device_id=hub.id,
         )
 
-    await api.async_start_ws(coordinator.handle_ws)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    await api.async_start_ws(coordinator.handle_ws)
 
     @callback
     def _on_entity_registry_updated(event) -> None:
@@ -138,14 +138,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: LanbonConfigEntry) -> bo
         entity_id = event.data.get("entity_id")
         if not entity_id or not str(entity_id).startswith("switch."):
             return
+        ereg = er.async_get(hass)
+        entry_er = ereg.async_get(entity_id)
+        if (
+            entry_er is None
+            or entry_er.config_entry_id != entry.entry_id
+            or entry_er.name is None
+        ):
+            return
         ent = _find_switch(hass, entity_id)
         if ent is None:
             return
         if getattr(ent, "_suppress_registry_push", False):
-            return
-        ereg = er.async_get(hass)
-        entry_er = ereg.async_get(entity_id)
-        if entry_er is None or entry_er.name is None:
             return
         new_name = str(entry_er.name).strip()
         if not new_name or new_name == ent.name:
@@ -173,9 +177,4 @@ async def async_unload_entry(hass: HomeAssistant, entry: LanbonConfigEntry) -> b
     if not unload_ok:
         return False
     await entry.runtime_data.api.async_stop_ws()
-    if not any(
-        e.entry_id != entry.entry_id and e.state is ConfigEntryState.LOADED
-        for e in hass.config_entries.async_entries(DOMAIN)
-    ) and hass.services.has_service(DOMAIN, SERVICE_SET_CHANNEL_NAME):
-        hass.services.async_remove(DOMAIN, SERVICE_SET_CHANNEL_NAME)
     return True
