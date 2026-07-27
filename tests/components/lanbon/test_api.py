@@ -1,7 +1,7 @@
 """Tests for the LANBON HTTP/WebSocket client."""
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import aiohttp
 import pytest
@@ -134,30 +134,27 @@ async def test_ws_start_receives_and_stop(hass: HomeAssistant) -> None:
 async def test_ws_reconnect_on_error(hass: HomeAssistant) -> None:
     """Test WebSocket errors are logged at debug and the loop retries."""
     api = LanbonApi(hass, HOST, PORT, TOKEN)
-    calls = {"n": 0}
 
-    class _BoomWS:
-        async def __aenter__(self):
-            calls["n"] += 1
-            raise OSError("down")
+    async def _boom(*_args, **_kwargs):
+        raise OSError("down")
 
-        async def __aexit__(self, *args):
-            return False
+    async def _yield_sleep(_delay: float) -> None:
+        await asyncio.sleep(0)
 
     with (
-        patch.object(api._session, "ws_connect", return_value=_BoomWS()),
+        patch.object(api._session, "ws_connect", side_effect=_boom),
         patch(
             "homeassistant.components.lanbon.coordinator.asyncio.sleep",
-            new_callable=AsyncMock,
+            side_effect=_yield_sleep,
         ) as sleep,
     ):
         await api.async_start_ws(lambda _data: None)
-        await asyncio.sleep(0)
-        await asyncio.sleep(0)
+        for _ in range(20):
+            if sleep.await_count:
+                break
+            await asyncio.sleep(0)
+        assert sleep.await_count >= 1
         await api.async_stop_ws()
-
-    assert calls["n"] >= 1
-    sleep.assert_awaited()
 
 
 async def test_coordinator_update_failed(
