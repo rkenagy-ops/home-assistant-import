@@ -102,9 +102,7 @@ class LanbonApi:
         while True:
             try:
                 async with self._session.ws_connect(url, heartbeat=30) as ws:
-                    _LOGGER.debug(
-                        "LANBON WS connected %s:%s", self.host, self.port
-                    )
+                    _LOGGER.debug("LANBON WS connected %s:%s", self.host, self.port)
                     async for msg in ws:
                         if msg.type == aiohttp.WSMsgType.TEXT:
                             try:

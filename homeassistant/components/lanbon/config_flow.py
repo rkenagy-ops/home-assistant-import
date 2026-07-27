@@ -81,9 +81,7 @@ class LanbonConfigFlow(ConfigFlow, domain=DOMAIN):
             info.get("type_name") or info.get("name") or self._type_name
         )
         await self.async_set_unique_id(mac)
-        self._abort_if_unique_id_configured(
-            updates={CONF_HOST: host, CONF_PORT: port}
-        )
+        self._abort_if_unique_id_configured(updates={CONF_HOST: host, CONF_PORT: port})
         return self.async_create_entry(
             title=self._type_name,
             data={
@@ -141,7 +139,7 @@ class LanbonConfigFlow(ConfigFlow, domain=DOMAIN):
         sw_type_raw = norm.get("sw_type")
         try:
             self._sw_type = int(str(sw_type_raw)) if sw_type_raw is not None else None
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             self._sw_type = None
         self._set_type_name(norm.get("type_name") or discovery_info.name.split(".")[0])
 
