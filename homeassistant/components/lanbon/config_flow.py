@@ -3,15 +3,16 @@
 import logging
 from typing import Any, override
 
+from aiolanbon import LanbonAuthError, LanbonClient, LanbonConnectionError
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_HOST, CONF_PORT, CONF_TOKEN
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 
 from .const import DEFAULT_PORT, DOMAIN, SUPPORTED_PROTO
-from .coordinator import LanbonApi
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -20,8 +21,8 @@ async def _validate(
     hass: HomeAssistant, host: str, port: int, token: str
 ) -> dict[str, Any]:
     """Validate connectivity and authentication to the Mesh root API."""
-    api = LanbonApi(hass, host, port, token)
-    return await api.async_get_info()
+    client = LanbonClient(host, port, token, async_get_clientsession(hass))
+    return await client.get_info()
 
 
 class LanbonConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -55,12 +56,17 @@ class LanbonConfigFlow(ConfigFlow, domain=DOMAIN):
         port: int,
         token: str,
         errors: dict[str, str],
+        *,
+        update_unique_id: bool,
     ) -> ConfigFlowResult | None:
         """Validate the host and create an entry, or fill errors."""
         try:
             info = await _validate(self.hass, host, port, token)
-        except PermissionError:
+        except LanbonAuthError:
             errors["base"] = "invalid_auth"
+            return None
+        except LanbonConnectionError:
+            errors["base"] = "cannot_connect"
             return None
         except Exception:
             _LOGGER.exception("LANBON connect failed")
@@ -74,14 +80,23 @@ class LanbonConfigFlow(ConfigFlow, domain=DOMAIN):
             errors["base"] = "not_root"
             return None
 
-        mac = str(info.get("mac") or self._mac or host).upper()
+        mac_raw = info.get("mac")
+        if not mac_raw:
+            errors["base"] = "cannot_connect"
+            return None
+        mac = str(mac_raw).upper()
         if info.get("sw_type") is not None:
             self._sw_type = info.get("sw_type")
         self._set_type_name(
             info.get("type_name") or info.get("name") or self._type_name
         )
         await self.async_set_unique_id(mac)
-        self._abort_if_unique_id_configured(updates={CONF_HOST: host, CONF_PORT: port})
+        if update_unique_id:
+            self._abort_if_unique_id_configured(
+                updates={CONF_HOST: host, CONF_PORT: port}
+            )
+        else:
+            self._abort_if_unique_id_configured()
         return self.async_create_entry(
             title=self._type_name,
             data={
@@ -102,9 +117,11 @@ class LanbonConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         if user_input is not None:
             host = user_input[CONF_HOST]
-            port = int(user_input.get(CONF_PORT, DEFAULT_PORT))
+            port = int(user_input[CONF_PORT])
             token = user_input[CONF_TOKEN]
-            result = await self._async_validate_and_create(host, port, token, errors)
+            result = await self._async_validate_and_create(
+                host, port, token, errors, update_unique_id=False
+            )
             if result is not None:
                 return result
 
@@ -139,7 +156,7 @@ class LanbonConfigFlow(ConfigFlow, domain=DOMAIN):
         sw_type_raw = norm.get("sw_type")
         try:
             self._sw_type = int(str(sw_type_raw)) if sw_type_raw is not None else None
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             self._sw_type = None
         self._set_type_name(norm.get("type_name") or discovery_info.name.split(".")[0])
 
@@ -158,7 +175,11 @@ class LanbonConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             token = user_input.get(CONF_TOKEN) or self._token
             result = await self._async_validate_and_create(
-                self._host or "", self._port, token, errors
+                self._host or "",
+                self._port,
+                token,
+                errors,
+                update_unique_id=True,
             )
             if result is not None:
                 return result

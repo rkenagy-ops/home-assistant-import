@@ -6,6 +6,8 @@
   "documentation": "https://www.home-assistant.io/integrations/lanbon",
   "integration_type": "hub",
   "iot_class": "local_push",
+  "loggers": ["aiolanbon"],
   "quality_scale": "bronze",
+  "requirements": ["aiolanbon==0.1.0"],
   "zeroconf": ["_lanbon._tcp.local."]
 }

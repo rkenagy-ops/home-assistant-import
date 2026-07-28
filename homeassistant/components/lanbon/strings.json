@@ -36,21 +36,5 @@
         "title": "LANBON host"
       }
     }
-  },
-  "services": {
-    "set_channel_name": {
-      "description": "Rename a LANBON switch channel on the panel (writes back to device).",
-      "fields": {
-        "entity_id": {
-          "description": "LANBON switch entity.",
-          "name": "Entity"
-        },
-        "name": {
-          "description": "New button name.",
-          "name": "Name"
-        }
-      },
-      "name": "Set channel name"
-    }
   }
 }

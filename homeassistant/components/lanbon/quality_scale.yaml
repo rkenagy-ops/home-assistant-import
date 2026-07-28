@@ -1,8 +1,8 @@
 rules:
   # Bronze
   action-setup:
-    status: done
-    comment: Service registered in async_setup and kept registered across entry unload/reload.
+    status: exempt
+    comment: No services/actions in the initial Core release.
   appropriate-polling:
     status: done
     comment: WebSocket push primary; 30s HTTP poll fallback.
@@ -11,17 +11,17 @@ rules:
     comment: https://github.com/home-assistant/brands/pull/10854
   common-modules:
     status: done
-    comment: coordinator.py holds API client and DataUpdateCoordinator.
+    comment: coordinator.py holds DataUpdateCoordinator; API client is aiolanbon.
   config-flow: done
   config-flow-test-coverage:
     status: done
     comment: tests/components/lanbon/test_config_flow.py covers user and discovery success, recovery, and error paths.
   dependency-transparency:
     status: done
-    comment: No third-party PyPI dependency; uses aiohttp via Home Assistant.
+    comment: aiolanbon published on PyPI (https://pypi.org/project/aiolanbon/).
   docs-actions:
-    status: done
-    comment: set_channel_name documented in home-assistant.io.
+    status: exempt
+    comment: No actions.
   docs-conditions:
     status: exempt
     comment: No conditions.
@@ -84,9 +84,9 @@ rules:
 
   # Platinum
   async-dependency:
-    status: exempt
-    comment: No third-party async dependency; uses aiohttp from Home Assistant.
+    status: done
+    comment: aiolanbon is an async PyPI package.
   inject-websession:
     status: done
-    comment: Uses async_get_clientsession.
+    comment: aiohttp ClientSession injected into LanbonClient.
   strict-typing: todo

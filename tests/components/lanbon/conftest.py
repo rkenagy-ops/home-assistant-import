@@ -94,38 +94,42 @@ def mock_config_entry() -> MockConfigEntry:
 
 @pytest.fixture
 def mock_api() -> Generator[AsyncMock]:
-    """Mock LanbonApi methods used during setup and control."""
+    """Mock aiolanbon client methods used during setup and control."""
     with (
         patch(
-            "homeassistant.components.lanbon.coordinator.LanbonApi.async_get_info",
+            "homeassistant.components.lanbon.config_flow.LanbonClient.get_info",
             new_callable=AsyncMock,
             return_value=INFO_ROOT,
-        ) as mock_info,
+        ),
         patch(
-            "homeassistant.components.lanbon.coordinator.LanbonApi.async_get_devices",
+            "homeassistant.components.lanbon.LanbonClient.get_info",
+            new_callable=AsyncMock,
+            return_value=INFO_ROOT,
+        ),
+        patch(
+            "homeassistant.components.lanbon.LanbonClient.get_devices",
             new_callable=AsyncMock,
             return_value=DEVICES,
         ) as mock_devices,
         patch(
-            "homeassistant.components.lanbon.coordinator.LanbonApi.async_command",
+            "homeassistant.components.lanbon.LanbonClient.command",
             new_callable=AsyncMock,
             return_value={"ok": True},
         ) as mock_command,
         patch(
-            "homeassistant.components.lanbon.coordinator.LanbonApi.async_start_ws",
+            "homeassistant.components.lanbon.LanbonClient.ws_listen",
             new_callable=AsyncMock,
-        ) as mock_start_ws,
-        patch(
-            "homeassistant.components.lanbon.coordinator.LanbonApi.async_stop_ws",
-            new_callable=AsyncMock,
-        ) as mock_stop_ws,
+        ) as mock_ws,
     ):
         mock = AsyncMock()
-        mock.async_get_info = mock_info
+        mock.get_devices = mock_devices
+        mock.command = mock_command
+        mock.ws_listen = mock_ws
+        # Keep old names for existing test assertions that used async_* prefix.
         mock.async_get_devices = mock_devices
         mock.async_command = mock_command
-        mock.async_start_ws = mock_start_ws
-        mock.async_stop_ws = mock_stop_ws
+        mock.async_start_ws = mock_ws
+        mock.async_stop_ws = AsyncMock()
         yield mock
 
 

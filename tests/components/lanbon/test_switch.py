@@ -34,7 +34,7 @@ async def test_switch_turn_on_off(
         {ATTR_ENTITY_ID: living},
         blocking=True,
     )
-    payload = mock_api.async_command.await_args.args[0]
+    payload = mock_api.command.await_args.args[0]
     assert payload == {
         "mac": MAC,
         "op": "switch_set",
@@ -48,7 +48,7 @@ async def test_switch_turn_on_off(
         {ATTR_ENTITY_ID: child},
         blocking=True,
     )
-    payload = mock_api.async_command.await_args.args[0]
+    payload = mock_api.command.await_args.args[0]
     assert payload == {
         "mac": CHILD_MAC,
         "op": "switch_set",
@@ -97,18 +97,3 @@ async def test_switch_unavailable_when_coordinator_fails(
     entry.runtime_data.coordinator.async_update_listeners()
     await hass.async_block_till_done()
     assert hass.states.get(living).state == "unavailable"
-
-
-async def test_registry_rename_ignores_other_domains(
-    hass: HomeAssistant,
-    setup_integration: MockConfigEntry,
-    mock_api: AsyncMock,
-) -> None:
-    """Registry updates for non-switch entities are ignored."""
-    mock_api.async_command.reset_mock()
-    hass.bus.async_fire(
-        er.EVENT_ENTITY_REGISTRY_UPDATED,
-        {"action": "create", "entity_id": "light.x", "changes": {}},
-    )
-    await hass.async_block_till_done()
-    mock_api.async_command.assert_not_awaited()

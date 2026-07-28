@@ -2,8 +2,11 @@
 
 from typing import Any, override
 
+from aiolanbon import LanbonClient, LanbonError
+
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -11,7 +14,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import LanbonConfigEntry
 from .const import DOMAIN
-from .coordinator import LanbonApi, LanbonCoordinator
+from .coordinator import LanbonCoordinator
 
 
 def _channel_name(dev: dict[str, Any] | None, index: int) -> str | None:
@@ -31,7 +34,7 @@ async def async_setup_entry(
 ) -> None:
     """Set up LANBON switch entities from a config entry."""
     coordinator = entry.runtime_data.coordinator
-    api = entry.runtime_data.api
+    client = entry.runtime_data.client
     registry = dr.async_get(hass)
 
     host = (coordinator.data or {}).get("host") or {}
@@ -53,7 +56,7 @@ async def async_setup_entry(
             entities.append(
                 LanbonSwitch(
                     coordinator,
-                    api=api,
+                    client=client,
                     mac=mac,
                     index=idx,
                     channel_name=_channel_name(dev, idx),
@@ -73,7 +76,7 @@ class LanbonSwitch(CoordinatorEntity[LanbonCoordinator], SwitchEntity):
         self,
         coordinator: LanbonCoordinator,
         *,
-        api: LanbonApi,
+        client: LanbonClient,
         mac: str,
         index: int,
         channel_name: str | None,
@@ -82,12 +85,11 @@ class LanbonSwitch(CoordinatorEntity[LanbonCoordinator], SwitchEntity):
     ) -> None:
         """Initialize the switch."""
         super().__init__(coordinator)
-        self._api = api
+        self._client = client
         self._mac = mac
         self._index = index
         self._attr_unique_id = f"{mac}_{index}"
         self._attr_name = channel_name or f"Switch {index + 1}"
-        self._suppress_registry_push = False
         device_info = DeviceInfo(
             identifiers={(DOMAIN, mac)},
             manufacturer="LANBON",
@@ -103,34 +105,25 @@ class LanbonSwitch(CoordinatorEntity[LanbonCoordinator], SwitchEntity):
                 return d
         return None
 
-    def _apply_channel_name(self, name: str | None) -> bool:
-        """Update entity name from device; return True if changed."""
+    def _apply_channel_name(self, name: str | None) -> None:
+        """Update entity name from device-provided channel_names."""
         new_name = name or f"Switch {self._index + 1}"
-        if new_name == self._attr_name:
-            return False
-        self._attr_name = new_name
-        return True
+        if new_name != self._attr_name:
+            self._attr_name = new_name
 
     @callback
     @override
     def _handle_coordinator_update(self) -> None:
-        # Only refresh the device-provided default name; never overwrite a
+        # Refresh the device-provided default name; never overwrite a
         # user registry override (RegistryEntry.name).
         self._apply_channel_name(_channel_name(self._dev(), self._index))
         super()._handle_coordinator_update()
 
-    async def async_set_channel_name(self, name: str) -> None:
-        """Push a channel rename to the panel."""
-        await self._api.async_command(
-            {
-                "mac": self._mac,
-                "op": "name_set",
-                "index": self._index,
-                "name": name,
-            }
-        )
-        self._attr_name = name
-        self.async_write_ha_state()
+    async def _async_command(self, payload: dict[str, Any]) -> None:
+        try:
+            await self._client.command(payload)
+        except LanbonError as err:
+            raise HomeAssistantError(str(err)) from err
 
     @property
     @override
@@ -156,7 +149,7 @@ class LanbonSwitch(CoordinatorEntity[LanbonCoordinator], SwitchEntity):
     @override
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the switch on."""
-        await self._api.async_command(
+        await self._async_command(
             {"mac": self._mac, "op": "switch_set", "index": self._index, "on": True}
         )
         await self.coordinator.async_request_refresh()
@@ -164,7 +157,7 @@ class LanbonSwitch(CoordinatorEntity[LanbonCoordinator], SwitchEntity):
     @override
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the switch off."""
-        await self._api.async_command(
+        await self._async_command(
             {"mac": self._mac, "op": "switch_set", "index": self._index, "on": False}
         )
         await self.coordinator.async_request_refresh()
