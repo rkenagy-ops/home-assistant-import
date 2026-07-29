@@ -156,7 +156,7 @@ class LanbonConfigFlow(ConfigFlow, domain=DOMAIN):
         sw_type_raw = norm.get("sw_type")
         try:
             self._sw_type = int(str(sw_type_raw)) if sw_type_raw is not None else None
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             self._sw_type = None
         self._set_type_name(norm.get("type_name") or discovery_info.name.split(".")[0])
 

@@ -2,8 +2,8 @@
 
 from unittest.mock import AsyncMock
 
-import pytest
 from aiolanbon import LanbonError
+import pytest
 
 from homeassistant.components.lanbon.const import DOMAIN
 from homeassistant.config_entries import ConfigEntryState
