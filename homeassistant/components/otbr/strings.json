@@ -37,6 +37,9 @@
     "no_preferred_dataset": {
       "message": "No dataset was given and no preferred Thread network is configured."
     },
+    "preferred_dataset_changed": {
+      "message": "The preferred Thread network changed while the border router was being read, so nothing was migrated. Try again."
+    },
     "router_dataset_invalid": {
       "message": "The border router returned a dataset that could not be parsed."
     },

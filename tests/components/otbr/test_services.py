@@ -554,7 +554,7 @@ async def test_migration_reports_a_discarded_store_write(
 
     with (
         patch(
-            "homeassistant.components.otbr.util.OTBRData.set_pending_dataset_tlvs",
+            "python_otbr_api.OTBR.set_pending_dataset_tlvs",
             side_effect=store_newer_dataset,
         ),
         pytest.raises(HomeAssistantError) as exc_info,
@@ -585,3 +585,170 @@ def _timestamp_parts_seconds(tlv: str) -> int:
     stamp = tlv_parser.parse_tlv(tlv)[MeshcopTLVType.ACTIVETIMESTAMP]
     assert isinstance(stamp, Timestamp)
     return stamp.seconds
+
+
+async def test_migrations_of_one_mesh_do_not_share_a_timestamp(
+    hass: HomeAssistant,
+    otbr_config_entry_multipan: str,
+    aioclient_mock: AiohttpClientMocker,
+) -> None:
+    """Test two migrations of the same mesh get distinct timestamps.
+
+    A pending dataset takes its delay to propagate, so a second border router
+    on the same mesh still reports the old active dataset and no pending one.
+    Targeting a different network, nothing in the router's or the store's
+    state would separate the two stamps.
+    """
+    mock_pending_endpoint(aioclient_mock)
+    other_target = dict(tlv_parser.parse_tlv(TARGET))
+    other_target[MeshcopTLVType.EXTPANID] = tlv_parser.MeshcopTLVItem(
+        MeshcopTLVType.EXTPANID, bytes.fromhex("3333333344444444")
+    )
+    other_target[MeshcopTLVType.ACTIVETIMESTAMP] = Timestamp.from_values(
+        MeshcopTLVType.ACTIVETIMESTAMP, seconds=1003
+    )
+
+    await call_migrate(hass, dataset=TARGET)
+    await call_migrate(hass, dataset=tlv_parser.encode_tlv(other_target))
+
+    stamps = [
+        tlv_parser.parse_tlv(put[2])[MeshcopTLVType.ACTIVETIMESTAMP].seconds
+        for put in pending_calls(aioclient_mock)
+    ]
+    assert len(stamps) == 2
+    assert stamps[0] != stamps[1]
+    assert stamps == sorted(stamps)
+
+
+async def test_preferred_dataset_replaced_while_reading_the_router(
+    hass: HomeAssistant,
+    otbr_config_entry_multipan: str,
+    aioclient_mock: AiohttpClientMocker,
+    get_active_dataset_tlvs: AsyncMock,
+) -> None:
+    """Test a superseded preferred dataset is refused before anything is sent.
+
+    The default target is a snapshot of the preferred dataset. Sending it
+    after another writer replaced it would put credentials on the mesh that
+    Home Assistant has already superseded -- stamped newer, so the newer ones
+    would be lost.
+    """
+    mock_pending_endpoint(aioclient_mock)
+    await async_add_dataset(hass, "test", TARGET)
+    store = await async_get_store(hass)
+    # Setup already imported the router's own network, so pick the target.
+    store.preferred_dataset = next(
+        entry.id
+        for entry in store.datasets.values()
+        if entry.extended_pan_id.lower() == "1111111122222222"
+    )
+
+    async def replace_preferred_dataset() -> bytes:
+        """Rotate the preferred network's key while the router is read."""
+        rotated = dict(tlv_parser.parse_tlv(TARGET))
+        rotated[MeshcopTLVType.NETWORKKEY] = tlv_parser.MeshcopTLVItem(
+            MeshcopTLVType.NETWORKKEY, bytes.fromhex("99999999888888887777777766666666")
+        )
+        rotated[MeshcopTLVType.ACTIVETIMESTAMP] = Timestamp.from_values(
+            MeshcopTLVType.ACTIVETIMESTAMP, seconds=1010
+        )
+        await async_add_dataset(hass, "panel", tlv_parser.encode_tlv(rotated))
+        return DATASET_CH16
+
+    get_active_dataset_tlvs.side_effect = replace_preferred_dataset
+
+    with pytest.raises(HomeAssistantError) as exc_info:
+        await call_migrate(hass)
+
+    assert exc_info.value.translation_key == "preferred_dataset_changed"
+    # Nothing reached the router, so the rotated credentials still stand.
+    assert not pending_calls(aioclient_mock)
+    stored = next(
+        entry
+        for entry in store.datasets.values()
+        if entry.extended_pan_id.lower() == "1111111122222222"
+    )
+    assert tlv_parser.parse_tlv(stored.tlv)[MeshcopTLVType.NETWORKKEY].data.hex() == (
+        "99999999888888887777777766666666"
+    )
+
+
+async def test_timestamp_watermark_is_per_mesh(
+    hass: HomeAssistant,
+    otbr_config_entry_multipan: str,
+    aioclient_mock: AiohttpClientMocker,
+    get_active_dataset_tlvs: AsyncMock,
+) -> None:
+    """Test one mesh's timestamps do not raise the floor for another.
+
+    A shared watermark would let a network with a high timestamp push every
+    other network's stamps up, and eventually exhaust them.
+    """
+    mock_pending_endpoint(aioclient_mock)
+    high = dict(tlv_parser.parse_tlv(DATASET_CH16.hex()))
+    high[MeshcopTLVType.ACTIVETIMESTAMP] = Timestamp.from_values(
+        MeshcopTLVType.ACTIVETIMESTAMP, seconds=900_000
+    )
+    get_active_dataset_tlvs.return_value = bytes.fromhex(tlv_parser.encode_tlv(high))
+
+    # A migration of the high-timestamp mesh ...
+    await call_migrate(hass, dataset=TARGET)
+
+    # ... must not push a migration of an unrelated mesh up with it. Both the
+    # source and the target differ, so nothing but a shared watermark could.
+    other_source = dict(tlv_parser.parse_tlv(DATASET_CH16.hex()))
+    other_source[MeshcopTLVType.EXTPANID] = tlv_parser.MeshcopTLVItem(
+        MeshcopTLVType.EXTPANID, bytes.fromhex("5555555566666666")
+    )
+    get_active_dataset_tlvs.return_value = bytes.fromhex(
+        tlv_parser.encode_tlv(other_source)
+    )
+    other_target = dict(tlv_parser.parse_tlv(TARGET))
+    other_target[MeshcopTLVType.EXTPANID] = tlv_parser.MeshcopTLVItem(
+        MeshcopTLVType.EXTPANID, bytes.fromhex("7777777788888888")
+    )
+
+    await call_migrate(hass, dataset=tlv_parser.encode_tlv(other_target))
+
+    stamps = [
+        tlv_parser.parse_tlv(put[2])[MeshcopTLVType.ACTIVETIMESTAMP].seconds
+        for put in pending_calls(aioclient_mock)
+    ]
+    assert stamps[0] == 900_001
+    # The second mesh's own timestamps are small; it keeps its own floor.
+    assert stamps[1] == 1004
+
+
+async def test_channel_pinned_by_another_router_on_the_mesh(
+    hass: HomeAssistant,
+    multiprotocol_addon_manager_mock: Mock,
+    otbr_config_entry_thread: None,
+    otbr_config_entry_multipan: str,
+    aioclient_mock: AiohttpClientMocker,
+) -> None:
+    """Test a pinned router on the mesh is respected through another router.
+
+    The pending dataset reaches every router on the network, so migrating
+    through a router that shares no radio would still move one that does.
+    """
+    mock_pending_endpoint(aioclient_mock)
+    # The router the migration is handed to speaks over its serial path.
+    aioclient_mock.get(
+        "/dev/ttyAMA1/node/dataset/pending", status=HTTPStatus.NO_CONTENT
+    )
+    aioclient_mock.put("/dev/ttyAMA1/node/dataset/pending", status=HTTPStatus.CREATED)
+    multiprotocol_addon_manager_mock.async_get_channel.return_value = 25
+
+    # Target the router that is not sharing its radio; the multiprotocol one
+    # is on the same network and pinned to another channel.
+    thread_entry = next(
+        entry
+        for entry in hass.config_entries.async_loaded_entries("otbr")
+        if entry.entry_id != otbr_config_entry_multipan
+    )
+
+    with pytest.raises(ServiceValidationError) as exc_info:
+        await call_migrate(hass, dataset=TARGET, config_entry=thread_entry.entry_id)
+
+    assert exc_info.value.translation_key == "channel_conflict"
+    assert not pending_calls(aioclient_mock)

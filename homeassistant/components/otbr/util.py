@@ -34,6 +34,12 @@ _LOGGER = logging.getLogger(__name__)
 
 
 DATASET_LOCK_KEY: HassKey[asyncio.Lock] = HassKey("otbr_dataset_lock")
+# Newest timestamp this integration has issued, per source network. Keyed by
+# extended PAN ID: a busy network must not raise the floor for the others,
+# which would eventually exhaust their timestamps too.
+ISSUED_TIMESTAMPS_KEY: HassKey[dict[str, tuple[int, int]]] = HassKey(
+    "otbr_issued_timestamps"
+)
 
 
 @callback
