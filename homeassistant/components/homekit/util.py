@@ -13,11 +13,15 @@ from pyhap.accessory import Accessory
 import pyqrcode
 import voluptuous as vol
 
-from homeassistant.components import persistent_notification
-from homeassistant.components.binary_sensor import DOMAIN as BINARY_SENSOR_DOMAIN
+from homeassistant.components import (
+    binary_sensor,
+    input_number,
+    media_player,
+    persistent_notification,
+    sensor,
+)
 from homeassistant.components.camera import DOMAIN as CAMERA_DOMAIN
 from homeassistant.components.event import DOMAIN as EVENT_DOMAIN
-from homeassistant.components.input_number import DOMAIN as INPUT_NUMBER_DOMAIN
 from homeassistant.components.lock import DOMAIN as LOCK_DOMAIN
 from homeassistant.components.media_player import (
     DOMAIN as MEDIA_PLAYER_DOMAIN,
@@ -25,7 +29,6 @@ from homeassistant.components.media_player import (
     MediaPlayerEntityFeature,
 )
 from homeassistant.components.remote import DOMAIN as REMOTE_DOMAIN, RemoteEntityFeature
-from homeassistant.components.sensor import DOMAIN as SENSOR_DOMAIN
 from homeassistant.const import (
     ATTR_CODE,
     ATTR_DEVICE_CLASS,
@@ -55,12 +58,14 @@ from .const import (
     CONF_AUDIO_PACKET_SIZE,
     CONF_FEATURE,
     CONF_FEATURE_LIST,
+    CONF_IRRIGATION_CONTROLLER,
     CONF_LINKED_BATTERY_CHARGING_SENSOR,
     CONF_LINKED_BATTERY_SENSOR,
     CONF_LINKED_DOORBELL_SENSOR,
     CONF_LINKED_FILTER_CHANGE_INDICATION,
     CONF_LINKED_FILTER_LIFE_LEVEL,
     CONF_LINKED_HUMIDITY_SENSOR,
+    CONF_LINKED_IRRIGATION_VALVES,
     CONF_LINKED_MOTION_SENSOR,
     CONF_LINKED_OBSTRUCTION_SENSOR,
     CONF_LINKED_PM25_SENSOR,
@@ -104,6 +109,7 @@ from .const import (
     TYPE_FAN,
     TYPE_FAUCET,
     TYPE_HEATER_COOLER,
+    TYPE_IRRIGATION_SYSTEM,
     TYPE_OUTLET,
     TYPE_SHOWER,
     TYPE_SPRINKLER,
@@ -140,9 +146,9 @@ VALID_AUDIO_CODECS = [AUDIO_CODEC_OPUS, VIDEO_CODEC_COPY]
 BASIC_INFO_SCHEMA = vol.Schema(
     {
         vol.Optional(CONF_NAME): cv.string,
-        vol.Optional(CONF_LINKED_BATTERY_SENSOR): cv.entity_domain(SENSOR_DOMAIN),
+        vol.Optional(CONF_LINKED_BATTERY_SENSOR): cv.entity_domain(sensor.DOMAIN),
         vol.Optional(CONF_LINKED_BATTERY_CHARGING_SENSOR): cv.entity_domain(
-            BINARY_SENSOR_DOMAIN
+            binary_sensor.DOMAIN
         ),
         vol.Optional(
             CONF_LOW_BATTERY_THRESHOLD, default=DEFAULT_LOW_BATTERY_THRESHOLD
@@ -183,16 +189,16 @@ CAMERA_SCHEMA = BASIC_INFO_SCHEMA.extend(
             CONF_VIDEO_PACKET_SIZE, default=DEFAULT_VIDEO_PACKET_SIZE
         ): cv.positive_int,
         vol.Optional(CONF_LINKED_MOTION_SENSOR): cv.entity_domain(
-            [BINARY_SENSOR_DOMAIN, EVENT_DOMAIN]
+            [binary_sensor.DOMAIN, EVENT_DOMAIN]
         ),
         vol.Optional(CONF_LINKED_DOORBELL_SENSOR): cv.entity_domain(
-            [BINARY_SENSOR_DOMAIN, EVENT_DOMAIN]
+            [binary_sensor.DOMAIN, EVENT_DOMAIN]
         ),
     }
 )
 
 HUMIDIFIER_SCHEMA = BASIC_INFO_SCHEMA.extend(
-    {vol.Optional(CONF_LINKED_HUMIDITY_SENSOR): cv.entity_domain(SENSOR_DOMAIN)}
+    {vol.Optional(CONF_LINKED_HUMIDITY_SENSOR): cv.entity_domain(sensor.DOMAIN)}
 )
 
 FAN_SCHEMA = BASIC_INFO_SCHEMA.extend(
@@ -206,20 +212,20 @@ FAN_SCHEMA = BASIC_INFO_SCHEMA.extend(
                 )
             ),
         ),
-        vol.Optional(CONF_LINKED_HUMIDITY_SENSOR): cv.entity_domain(SENSOR_DOMAIN),
-        vol.Optional(CONF_LINKED_PM25_SENSOR): cv.entity_domain(SENSOR_DOMAIN),
-        vol.Optional(CONF_LINKED_TEMPERATURE_SENSOR): cv.entity_domain(SENSOR_DOMAIN),
+        vol.Optional(CONF_LINKED_HUMIDITY_SENSOR): cv.entity_domain(sensor.DOMAIN),
+        vol.Optional(CONF_LINKED_PM25_SENSOR): cv.entity_domain(sensor.DOMAIN),
+        vol.Optional(CONF_LINKED_TEMPERATURE_SENSOR): cv.entity_domain(sensor.DOMAIN),
         vol.Optional(CONF_LINKED_FILTER_CHANGE_INDICATION): cv.entity_domain(
-            BINARY_SENSOR_DOMAIN
+            binary_sensor.DOMAIN
         ),
-        vol.Optional(CONF_LINKED_FILTER_LIFE_LEVEL): cv.entity_domain(SENSOR_DOMAIN),
+        vol.Optional(CONF_LINKED_FILTER_LIFE_LEVEL): cv.entity_domain(sensor.DOMAIN),
     }
 )
 
 COVER_SCHEMA = BASIC_INFO_SCHEMA.extend(
     {
         vol.Optional(CONF_LINKED_OBSTRUCTION_SENSOR): cv.entity_domain(
-            BINARY_SENSOR_DOMAIN
+            binary_sensor.DOMAIN
         )
     }
 )
@@ -246,7 +252,7 @@ CODE_SCHEMA = BASIC_INFO_SCHEMA.extend(
 LOCK_SCHEMA = CODE_SCHEMA.extend(
     {
         vol.Optional(CONF_LINKED_DOORBELL_SENSOR): cv.entity_domain(
-            [BINARY_SENSOR_DOMAIN, EVENT_DOMAIN]
+            [binary_sensor.DOMAIN, EVENT_DOMAIN]
         ),
     }
 )
@@ -282,8 +288,8 @@ SWITCH_TYPE_SCHEMA = BASIC_INFO_SCHEMA.extend(
                 )
             ),
         ),
-        vol.Optional(CONF_LINKED_VALVE_DURATION): cv.entity_domain(INPUT_NUMBER_DOMAIN),
-        vol.Optional(CONF_LINKED_VALVE_END_TIME): cv.entity_domain(SENSOR_DOMAIN),
+        vol.Optional(CONF_LINKED_VALVE_DURATION): cv.entity_domain(input_number.DOMAIN),
+        vol.Optional(CONF_LINKED_VALVE_END_TIME): cv.entity_domain(sensor.DOMAIN),
     }
 )
 
@@ -296,8 +302,17 @@ SENSOR_SCHEMA = BASIC_INFO_SCHEMA.extend(
 
 VALVE_SCHEMA = BASIC_INFO_SCHEMA.extend(
     {
-        vol.Optional(CONF_LINKED_VALVE_DURATION): cv.entity_domain(INPUT_NUMBER_DOMAIN),
-        vol.Optional(CONF_LINKED_VALVE_END_TIME): cv.entity_domain(SENSOR_DOMAIN),
+        vol.Optional(CONF_TYPE): vol.All(
+            cv.string,
+            vol.In((TYPE_IRRIGATION_SYSTEM,)),
+        ),
+        vol.Optional(CONF_LINKED_IRRIGATION_VALVES): vol.All(
+            cv.ensure_list,
+            [cv.entity_domain("valve")],
+        ),
+        vol.Optional(CONF_IRRIGATION_CONTROLLER): cv.entity_domain("valve"),
+        vol.Optional(CONF_LINKED_VALVE_DURATION): cv.entity_domain(input_number.DOMAIN),
+        vol.Optional(CONF_LINKED_VALVE_END_TIME): cv.entity_domain(sensor.DOMAIN),
     }
 )
 
@@ -335,6 +350,106 @@ HOMEKIT_CHAR_TRANSLATIONS = {
 }
 
 
+def _validate_entity_domain_config(
+    entity: str, domain: str, config: dict[str, Any]
+) -> dict[str, Any]:
+    """Validate one entity config according to its domain schema."""
+    if domain == "alarm_control_panel":
+        return cast(dict[str, Any], CODE_SCHEMA(config))
+
+    if domain == media_player.const.DOMAIN:
+        media_player_config = cast(dict[str, Any], FEATURE_SCHEMA(config))
+        feature_list: dict[str, dict[str, Any]] = {}
+        for feature in media_player_config[CONF_FEATURE_LIST]:
+            params = cast(dict[str, Any], MEDIA_PLAYER_SCHEMA(feature))
+            key = params.pop(CONF_FEATURE)
+            if key in feature_list:
+                raise vol.Invalid(f"A feature can be added only once for {entity}")
+            feature_list[str(key)] = params
+        media_player_config[CONF_FEATURE_LIST] = feature_list
+        return media_player_config
+
+    if domain == "camera":
+        return cast(dict[str, Any], CAMERA_SCHEMA(config))
+    if domain == "lock":
+        return cast(dict[str, Any], LOCK_SCHEMA(config))
+    if domain == "switch":
+        return cast(dict[str, Any], SWITCH_TYPE_SCHEMA(config))
+    if domain == "humidifier":
+        return cast(dict[str, Any], HUMIDIFIER_SCHEMA(config))
+    if domain == "climate":
+        return cast(dict[str, Any], CLIMATE_SCHEMA(config))
+    if domain == "cover":
+        return cast(dict[str, Any], COVER_SCHEMA(config))
+    if domain == "fan":
+        return cast(dict[str, Any], FAN_SCHEMA(config))
+    if domain == "sensor":
+        return cast(dict[str, Any], SENSOR_SCHEMA(config))
+    if domain == "valve":
+        return cast(dict[str, Any], VALVE_SCHEMA(config))
+
+    return cast(dict[str, Any], BASIC_INFO_SCHEMA(config))
+
+
+def _validate_irrigation_relationships(entities: dict[str, dict]) -> None:
+    """Validate irrigation system/controller relationships for valve entities."""
+    irrigation_primaries: dict[str, set[str]] = {}
+    irrigation_children: dict[str, str] = {}
+    irrigation_controllers: dict[str, str] = {}
+
+    for entity_id, config in entities.items():
+        if split_entity_id(entity_id)[0] != "valve":
+            continue
+
+        if config.get(CONF_TYPE) == TYPE_IRRIGATION_SYSTEM:
+            linked_valves = config.get(CONF_LINKED_IRRIGATION_VALVES, [])
+            linked_list = [cv.entity_id(valve_id) for valve_id in linked_valves]
+            if not linked_list:
+                raise vol.Invalid(
+                    f"{entity_id} must include at least one linked irrigation valve"
+                )
+            if len(linked_list) != len(set(linked_list)):
+                raise vol.Invalid(f"{entity_id} has duplicate linked irrigation valves")
+            if entity_id in linked_list:
+                raise vol.Invalid(
+                    f"{entity_id} cannot include itself as a linked irrigation valve"
+                )
+            irrigation_primaries[entity_id] = set(linked_list)
+            for linked_entity_id in linked_list:
+                if linked_entity_id in irrigation_children:
+                    raise vol.Invalid(
+                        f"{linked_entity_id} is linked to multiple irrigation controllers"
+                    )
+                irrigation_children[linked_entity_id] = entity_id
+
+        if controller := config.get(CONF_IRRIGATION_CONTROLLER):
+            irrigation_controllers[entity_id] = cv.entity_id(controller)
+
+    for primary, linked_entities in irrigation_primaries.items():
+        if primary in irrigation_controllers:
+            raise vol.Invalid(
+                f"{primary} cannot be both an irrigation controller and a linked irrigation valve"
+            )
+        for linked_entity_id in linked_entities:
+            if irrigation_controllers.get(linked_entity_id) != primary:
+                raise vol.Invalid(
+                    f"{linked_entity_id} must declare {primary} as irrigation_controller"
+                )
+
+    for child_entity_id, controller_entity_id in irrigation_controllers.items():
+        if child_entity_id == controller_entity_id:
+            raise vol.Invalid(
+                f"{child_entity_id} cannot be its own irrigation_controller"
+            )
+        if (
+            controller_entity_id not in irrigation_primaries
+            or child_entity_id not in irrigation_primaries[controller_entity_id]
+        ):
+            raise vol.Invalid(
+                f"{child_entity_id} references irrigation_controller {controller_entity_id} without a matching primary group"
+            )
+
+
 def validate_entity_config(values: dict) -> dict[str, dict]:
     """Validate config entry for CONF_ENTITY."""
     if not isinstance(values, dict):
@@ -348,51 +463,12 @@ def validate_entity_config(values: dict) -> dict[str, dict]:
         if not isinstance(config, dict):
             raise vol.Invalid(f"The configuration for {entity} must be a dictionary.")
 
-        if domain == "alarm_control_panel":
-            config = CODE_SCHEMA(config)
-
-        elif domain == MEDIA_PLAYER_DOMAIN:
-            config = FEATURE_SCHEMA(config)
-            feature_list = {}
-            for feature in config[CONF_FEATURE_LIST]:
-                params = MEDIA_PLAYER_SCHEMA(feature)
-                key = params.pop(CONF_FEATURE)
-                if key in feature_list:
-                    raise vol.Invalid(f"A feature can be added only once for {entity}")
-                feature_list[key] = params
-            config[CONF_FEATURE_LIST] = feature_list
-
-        elif domain == "camera":
-            config = CAMERA_SCHEMA(config)
-
-        elif domain == "lock":
-            config = LOCK_SCHEMA(config)
-
-        elif domain == "switch":
-            config = SWITCH_TYPE_SCHEMA(config)
-
-        elif domain == "humidifier":
-            config = HUMIDIFIER_SCHEMA(config)
-
-        elif domain == "climate":
-            config = CLIMATE_SCHEMA(config)
-
-        elif domain == "cover":
-            config = COVER_SCHEMA(config)
-
-        elif domain == "fan":
-            config = FAN_SCHEMA(config)
-
-        elif domain == "sensor":
-            config = SENSOR_SCHEMA(config)
-
-        elif domain == "valve":
-            config = VALVE_SCHEMA(config)
-
-        else:
-            config = BASIC_INFO_SCHEMA(config)
+        config = _validate_entity_domain_config(entity, domain, config)
 
         entities[entity] = config
+
+    _validate_irrigation_relationships(entities)
+
     return entities
 
 

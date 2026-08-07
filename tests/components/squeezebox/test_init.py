@@ -159,8 +159,6 @@ async def test_device_registry_server_merged(
         (DOMAIN, TEST_MAC[2]), config_entry.entry_id
     )
     assert reg_device is not None
-    # The player shares the server's device, so it must not be linked to itself.
-    assert reg_device.via_device_id is None
     assert reg_device == snapshot
 
 

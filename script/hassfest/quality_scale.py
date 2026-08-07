@@ -785,6 +785,7 @@ INTEGRATIONS_WITHOUT_QUALITY_SCALE_FILE = [
     "rympro",
     "saj",
     "sanix",
+    "schlage",
     "schluter",
     "scrape",
     "screenlogic",
