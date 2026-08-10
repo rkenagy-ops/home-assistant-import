@@ -209,6 +209,7 @@ SUPPORTED_PLATFORMS_UI: Final = {
     Platform.NOTIFY,
     Platform.NUMBER,
     Platform.SCENE,
+    Platform.SELECT,
     Platform.SENSOR,
     Platform.SWITCH,
     Platform.TEXT,

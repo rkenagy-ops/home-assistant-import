@@ -78,6 +78,11 @@ CONF_GA_SATURATION: Final = "ga_saturation"
 # Scene
 CONF_GA_SCENE: Final = "ga_scene"
 
+# Select
+CONF_GA_SELECT: Final = "ga_select"
+# CONF_OPTIONS comes from homeassistant.const
+CONF_OPTION: Final = "option"
+
 # Sensor
 CONF_ALWAYS_CALLBACK: Final = "always_callback"
 
