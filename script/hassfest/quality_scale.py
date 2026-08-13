@@ -2069,6 +2069,7 @@ NO_QUALITY_SCALE = [
     "tag",
     "temperature",
     "timer",
+    "local_timer_list",
     "trace",
     "usage_prediction",
     "vibration",
