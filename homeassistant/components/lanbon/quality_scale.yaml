@@ -3,22 +3,12 @@ rules:
   action-setup:
     status: exempt
     comment: No services/actions in the initial Core release.
-  appropriate-polling:
-    status: done
-    comment: WebSocket push primary; 30s HTTP poll fallback.
-  brands:
-    status: done
-    comment: https://github.com/home-assistant/brands/pull/10854
-  common-modules:
-    status: done
-    comment: coordinator.py holds DataUpdateCoordinator; API client is aiolanbon.
+  appropriate-polling: done
+  brands: done
+  common-modules: done
   config-flow: done
-  config-flow-test-coverage:
-    status: done
-    comment: tests/components/lanbon/test_config_flow.py covers user and discovery success, recovery, and error paths.
-  dependency-transparency:
-    status: done
-    comment: aiolanbon published on PyPI (https://pypi.org/project/aiolanbon/).
+  config-flow-test-coverage: done
+  dependency-transparency: done
   docs-actions:
     status: exempt
     comment: No actions.
@@ -34,18 +24,10 @@ rules:
   entity-event-setup: done
   entity-unique-id: done
   has-entity-name: done
-  runtime-data:
-    status: done
-    comment: LanbonRuntimeData on ConfigEntry.runtime_data.
-  test-before-configure:
-    status: done
-    comment: config_flow validates via GET /api/v1/info.
-  test-before-setup:
-    status: done
-    comment: async_config_entry_first_refresh on setup.
-  unique-config-entry:
-    status: done
-    comment: unique_id = host MAC.
+  runtime-data: done
+  test-before-configure: done
+  test-before-setup: done
+  unique-config-entry: done
 
   # Silver
   action-exceptions: todo
@@ -60,7 +42,7 @@ rules:
   test-coverage: todo
 
   # Gold
-  devices: todo
+  devices: done
   diagnostics: todo
   discovery: done
   discovery-update-info: todo
@@ -83,10 +65,6 @@ rules:
   stale-devices: todo
 
   # Platinum
-  async-dependency:
-    status: done
-    comment: aiolanbon is an async PyPI package.
-  inject-websession:
-    status: done
-    comment: aiohttp ClientSession injected into LanbonClient.
+  async-dependency: done
+  inject-websession: done
   strict-typing: todo

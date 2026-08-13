@@ -1,16 +1,20 @@
 """LANBON DataUpdateCoordinator."""
 
+from __future__ import annotations
+
 from datetime import timedelta
 import logging
-from typing import Any, override
+from typing import TYPE_CHECKING, Any, override
 
 from aiolanbon import LanbonAuthError, LanbonClient, LanbonError
 
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import DOMAIN
+
+if TYPE_CHECKING:
+    from . import LanbonConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -18,10 +22,13 @@ _LOGGER = logging.getLogger(__name__)
 class LanbonCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator for LANBON device state."""
 
-    config_entry: ConfigEntry
+    config_entry: LanbonConfigEntry
 
     def __init__(
-        self, hass: HomeAssistant, config_entry: ConfigEntry, client: LanbonClient
+        self,
+        hass: HomeAssistant,
+        config_entry: LanbonConfigEntry,
+        client: LanbonClient,
     ) -> None:
         """Initialize the coordinator."""
         super().__init__(
@@ -43,8 +50,6 @@ class LanbonCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raise UpdateFailed(str(err)) from err
 
     def handle_ws(self, data: dict[str, Any]) -> None:
-        """Handle a WebSocket state push."""
-        if not isinstance(data, dict):
-            return
+        """Handle a WebSocket state push from the event loop."""
         if data.get("type") == "state" or "devices" in data:
-            self.hass.loop.call_soon_threadsafe(self.async_set_updated_data, data)
+            self.async_set_updated_data(data)

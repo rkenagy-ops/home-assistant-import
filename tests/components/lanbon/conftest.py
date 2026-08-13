@@ -6,7 +6,12 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from homeassistant.components.lanbon.const import DOMAIN
+from homeassistant.components.lanbon.const import (
+    CONF_MAC,
+    CONF_SW_TYPE,
+    CONF_TYPE_NAME,
+    DOMAIN,
+)
 from homeassistant.const import CONF_HOST, CONF_PORT, CONF_TOKEN
 from homeassistant.core import HomeAssistant
 
@@ -85,9 +90,9 @@ def mock_config_entry() -> MockConfigEntry:
             CONF_HOST: HOST,
             CONF_PORT: PORT,
             CONF_TOKEN: TOKEN,
-            "mac": MAC,
-            "sw_type": 224,
-            "type_name": "4gang Switch",
+            CONF_MAC: MAC,
+            CONF_SW_TYPE: 224,
+            CONF_TYPE_NAME: "4gang Switch",
         },
     )
 
@@ -125,11 +130,6 @@ def mock_api() -> Generator[AsyncMock]:
         mock.get_devices = mock_devices
         mock.command = mock_command
         mock.ws_listen = mock_ws
-        # Keep old names for existing test assertions that used async_* prefix.
-        mock.async_get_devices = mock_devices
-        mock.async_command = mock_command
-        mock.async_start_ws = mock_ws
-        mock.async_stop_ws = AsyncMock()
         yield mock
 
 

@@ -35,11 +35,17 @@ async def test_setup_and_unload(
     assert entry.state is ConfigEntryState.LOADED
     mock_api.ws_listen.assert_called()
 
-    hub = device_registry.async_get_device({(DOMAIN, MAC)})
-    child = device_registry.async_get_device({(DOMAIN, CHILD_MAC)})
+    hub = device_registry.async_get_device_by_identifier(
+        (DOMAIN, MAC), entry.entry_id
+    )
+    child = device_registry.async_get_device_by_identifier(
+        (DOMAIN, CHILD_MAC), entry.entry_id
+    )
     assert hub is not None
     assert child is not None
     assert child.via_device_id == hub.id
+    assert (dr.CONNECTION_NETWORK_MAC, dr.format_mac(MAC)) in hub.connections
+    assert (dr.CONNECTION_NETWORK_MAC, dr.format_mac(CHILD_MAC)) in child.connections
 
     living = _entity_id(entity_registry, f"{MAC}_0")
     kitchen = _entity_id(entity_registry, f"{MAC}_1")
@@ -80,7 +86,7 @@ async def test_ws_state_push(
     entry = setup_integration
     living = _entity_id(entity_registry, f"{MAC}_0")
     kitchen = _entity_id(entity_registry, f"{MAC}_1")
-    coordinator = entry.runtime_data.coordinator
+    coordinator = entry.runtime_data
     coordinator.handle_ws(
         {
             "type": "state",

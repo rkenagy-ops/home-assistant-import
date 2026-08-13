@@ -1,7 +1,7 @@
 """Config flow for LANBON."""
 
 import logging
-from typing import Any, override
+from typing import TYPE_CHECKING, Any, override
 
 from aiolanbon import LanbonAuthError, LanbonClient, LanbonConnectionError
 import voluptuous as vol
@@ -12,7 +12,14 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 
-from .const import DEFAULT_PORT, DOMAIN, SUPPORTED_PROTO
+from .const import (
+    CONF_MAC,
+    CONF_SW_TYPE,
+    CONF_TYPE_NAME,
+    DEFAULT_PORT,
+    DOMAIN,
+    SUPPORTED_PROTO,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -69,8 +76,8 @@ class LanbonConfigFlow(ConfigFlow, domain=DOMAIN):
             errors["base"] = "cannot_connect"
             return None
         except Exception:
-            _LOGGER.exception("LANBON connect failed")
-            errors["base"] = "cannot_connect"
+            _LOGGER.exception("Unexpected exception connecting to LANBON")
+            errors["base"] = "unknown"
             return None
 
         if not self._proto_supported(info):
@@ -80,15 +87,11 @@ class LanbonConfigFlow(ConfigFlow, domain=DOMAIN):
             errors["base"] = "not_root"
             return None
 
-        mac_raw = info.get("mac")
-        if not mac_raw:
-            errors["base"] = "cannot_connect"
-            return None
-        mac = str(mac_raw).upper()
-        if info.get("sw_type") is not None:
-            self._sw_type = info.get("sw_type")
+        mac = str(info[CONF_MAC]).upper()
+        if info.get(CONF_SW_TYPE) is not None:
+            self._sw_type = info.get(CONF_SW_TYPE)
         self._set_type_name(
-            info.get("type_name") or info.get("name") or self._type_name
+            info.get(CONF_TYPE_NAME) or info.get("name") or self._type_name
         )
         await self.async_set_unique_id(mac)
         if update_unique_id:
@@ -103,9 +106,9 @@ class LanbonConfigFlow(ConfigFlow, domain=DOMAIN):
                 CONF_HOST: host,
                 CONF_PORT: port,
                 CONF_TOKEN: token,
-                "mac": mac,
-                "sw_type": self._sw_type,
-                "type_name": self._type_name,
+                CONF_MAC: mac,
+                CONF_SW_TYPE: self._sw_type,
+                CONF_TYPE_NAME: self._type_name,
             },
         )
 
@@ -116,11 +119,12 @@ class LanbonConfigFlow(ConfigFlow, domain=DOMAIN):
         """Handle the initial step."""
         errors: dict[str, str] = {}
         if user_input is not None:
-            host = user_input[CONF_HOST]
-            port = int(user_input[CONF_PORT])
-            token = user_input[CONF_TOKEN]
             result = await self._async_validate_and_create(
-                host, port, token, errors, update_unique_id=False
+                user_input[CONF_HOST],
+                DEFAULT_PORT,
+                user_input[CONF_TOKEN],
+                errors,
+                update_unique_id=False,
             )
             if result is not None:
                 return result
@@ -129,9 +133,8 @@ class LanbonConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_HOST, default=self._host or ""): str,
-                    vol.Required(CONF_PORT, default=self._port): int,
-                    vol.Required(CONF_TOKEN, default=self._token): str,
+                    vol.Required(CONF_HOST): str,
+                    vol.Required(CONF_TOKEN): str,
                 }
             ),
             errors=errors,
@@ -142,8 +145,6 @@ class LanbonConfigFlow(ConfigFlow, domain=DOMAIN):
         self, discovery_info: ZeroconfServiceInfo
     ) -> ConfigFlowResult:
         """Handle zeroconf discovery."""
-        self._host = discovery_info.host
-        self._port = discovery_info.port or DEFAULT_PORT
         props = discovery_info.properties or {}
         norm = {
             (k.decode() if isinstance(k, bytes) else k): (
@@ -151,31 +152,43 @@ class LanbonConfigFlow(ConfigFlow, domain=DOMAIN):
             )
             for k, v in props.items()
         }
-        self._mac = (str(norm.get("mac") or "")).upper() or None
-        self._token = str(norm.get("token") or "")
-        sw_type_raw = norm.get("sw_type")
+        mac = str(norm.get(CONF_MAC) or "").upper()
+        token = str(norm.get(CONF_TOKEN) or "")
+        if not mac or not token:
+            return self.async_abort(reason="invalid_discovery_info")
+
+        self._host = discovery_info.host
+        self._port = discovery_info.port or DEFAULT_PORT
+        self._mac = mac
+        self._token = token
+        sw_type_raw = norm.get(CONF_SW_TYPE)
         try:
             self._sw_type = int(str(sw_type_raw)) if sw_type_raw is not None else None
         except TypeError, ValueError:
             self._sw_type = None
-        self._set_type_name(norm.get("type_name") or discovery_info.name.split(".")[0])
+        self._set_type_name(
+            norm.get(CONF_TYPE_NAME) or discovery_info.name.split(".")[0]
+        )
 
-        if self._mac:
-            await self.async_set_unique_id(self._mac)
-            self._abort_if_unique_id_configured(
-                updates={CONF_HOST: self._host, CONF_PORT: self._port}
-            )
+        await self.async_set_unique_id(self._mac)
+        self._abort_if_unique_id_configured(
+            updates={CONF_HOST: self._host, CONF_PORT: self._port}
+        )
         return await self.async_step_discovery_confirm()
 
     async def async_step_discovery_confirm(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Confirm a discovered Mesh root."""
+        if TYPE_CHECKING:
+            assert self._host is not None
+        assert self._host is not None
+
         errors: dict[str, str] = {}
         if user_input is not None:
-            token = user_input.get(CONF_TOKEN) or self._token
+            token = user_input.get(CONF_TOKEN, self._token)
             result = await self._async_validate_and_create(
-                self._host or "",
+                self._host,
                 self._port,
                 token,
                 errors,
@@ -185,14 +198,15 @@ class LanbonConfigFlow(ConfigFlow, domain=DOMAIN):
                 return result
 
         self._set_type_name(self._type_name)
+        schema = vol.Schema({})
+        if errors:
+            schema = vol.Schema({vol.Required(CONF_TOKEN): str})
         return self.async_show_form(
             step_id="discovery_confirm",
             description_placeholders={
                 "name": self._type_name,
-                "host": self._host or "",
+                "host": self._host,
             },
-            data_schema=vol.Schema(
-                {vol.Required(CONF_TOKEN, default=self._token): str}
-            ),
+            data_schema=schema,
             errors=errors,
         )

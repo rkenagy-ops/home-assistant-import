@@ -52,5 +52,4 @@ async def test_handle_ws_ignores_non_state(
     mock_config_entry.add_to_hass(hass)
     client = LanbonClient(HOST, PORT, TOKEN, async_get_clientsession(hass))
     coordinator = LanbonCoordinator(hass, mock_config_entry, client)
-    coordinator.handle_ws("nope")  # type: ignore[arg-type]
     coordinator.handle_ws({"type": "pong"})

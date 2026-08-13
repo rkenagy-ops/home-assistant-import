@@ -93,7 +93,7 @@ async def test_switch_unavailable_when_coordinator_fails(
     """Coordinator failure marks switches unavailable."""
     entry = setup_integration
     living = _entity_id(entity_registry, f"{MAC}_0")
-    entry.runtime_data.coordinator.last_update_success = False
-    entry.runtime_data.coordinator.async_update_listeners()
+    entry.runtime_data.last_update_success = False
+    entry.runtime_data.async_update_listeners()
     await hass.async_block_till_done()
     assert hass.states.get(living).state == "unavailable"
