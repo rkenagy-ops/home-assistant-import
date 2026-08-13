@@ -108,14 +108,22 @@ class OpenRGBCoordinator(DataUpdateCoordinator[dict[str, Device]]):
 
         Note: the OpenRGB device.id is intentionally not used because it is just
         a positional index that can change when devices are added or removed.
+
+        The serial number is preferred as the final discriminator because it is
+        a property of the hardware. The location is only used as a fallback for
+        devices that report no serial, because it holds the current connection
+        path (for example "HID: /dev/hidraw14"). Those paths are reassigned when
+        a device reconnects and on every reboot, so including one unconditionally
+        makes unchanged hardware look like a new device.
         """
+        # Devices that cannot report a serial may return padding instead
+        serial = (device.metadata.serial or "").strip()
         parts = (
             self.entry_id,
             device.type.name,
             device.metadata.vendor or "none",
             device.metadata.description or "none",
-            device.metadata.serial or "none",
-            device.metadata.location or "none",
+            serial or device.metadata.location or "none",
         )
         # Double pipe is readable and is unlikely to appear in metadata
         return UID_SEPARATOR.join(parts)

@@ -1,5 +1,6 @@
 """Tests for the OpenRGB integration init."""
 
+import copy
 import socket
 from unittest.mock import MagicMock
 
@@ -10,9 +11,9 @@ import pytest
 from homeassistant.components.openrgb import async_remove_config_entry_device
 from homeassistant.components.openrgb.const import DOMAIN, SCAN_INTERVAL, UID_SEPARATOR
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import STATE_ON, STATE_UNAVAILABLE
+from homeassistant.const import STATE_ON, STATE_UNAVAILABLE, Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 
 from tests.common import MockConfigEntry, async_fire_time_changed
 
@@ -353,3 +354,301 @@ async def test_normal_update_without_errors(
     state = hass.states.get("light.ene_dram")
     assert state
     assert state.state == STATE_ON
+
+
+def _light_unique_ids(
+    entity_registry: er.EntityRegistry, entry: MockConfigEntry
+) -> set[str]:
+    """Return the unique ids of every light registered for the entry."""
+    return {
+        registry_entry.unique_id
+        for registry_entry in er.async_entries_for_config_entry(
+            entity_registry, entry.entry_id
+        )
+        if registry_entry.domain == Platform.LIGHT
+    }
+
+
+async def test_device_key_prefers_serial(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_openrgb_client: MagicMock,
+    mock_openrgb_device: MagicMock,
+    entity_registry: er.EntityRegistry,
+) -> None:
+    """Test that a reported serial is used instead of the connection path."""
+    device = copy.deepcopy(mock_openrgb_device)
+    device.metadata.serial = "IO2105F28204577"
+    device.metadata.location = "HID: /dev/hidraw14"
+    mock_openrgb_client.devices = [device]
+
+    mock_config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert _light_unique_ids(entity_registry, mock_config_entry) == {
+        UID_SEPARATOR.join(
+            [
+                mock_config_entry.entry_id,
+                "DRAM",
+                "ENE",
+                "ENE SMBus Device",
+                "IO2105F28204577",
+            ]
+        )
+    }
+
+
+async def test_device_key_ignores_padded_serial(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_openrgb_client: MagicMock,
+    mock_openrgb_device: MagicMock,
+    entity_registry: er.EntityRegistry,
+) -> None:
+    """Test that a serial of only padding is treated as not reported.
+
+    Some controllers answer a serial request with padding when the hardware
+    cannot supply one, which must not be mistaken for a real serial.
+    """
+    device = copy.deepcopy(mock_openrgb_device)
+    device.metadata.serial = "                      "
+    device.metadata.location = "HID: /dev/hidraw14"
+    mock_openrgb_client.devices = [device]
+
+    mock_config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert _light_unique_ids(entity_registry, mock_config_entry) == {
+        UID_SEPARATOR.join(
+            [
+                mock_config_entry.entry_id,
+                "DRAM",
+                "ENE",
+                "ENE SMBus Device",
+                "HID: /dev/hidraw14",
+            ]
+        )
+    }
+
+
+async def test_device_key_survives_changed_connection_path(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_openrgb_client: MagicMock,
+    mock_openrgb_device: MagicMock,
+    entity_registry: er.EntityRegistry,
+) -> None:
+    """Test that unchanged hardware keeps its identity on a new path.
+
+    Connection paths are reassigned when a device reconnects and on every
+    reboot, which previously registered the device again as a duplicate.
+    """
+    device = copy.deepcopy(mock_openrgb_device)
+    device.metadata.serial = "IO2105F28204577"
+    device.metadata.location = "HID: /dev/hidraw14"
+    mock_openrgb_client.devices = [device]
+
+    mock_config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    unique_ids_before = _light_unique_ids(entity_registry, mock_config_entry)
+    assert len(unique_ids_before) == 1
+
+    # Same hardware, reconnected on a different path
+    device.metadata.location = "HID: /dev/hidraw31"
+
+    await hass.config_entries.async_reload(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert _light_unique_ids(entity_registry, mock_config_entry) == unique_ids_before
+
+
+async def test_migrate_legacy_device_key(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_openrgb_client: MagicMock,
+    mock_openrgb_device: MagicMock,
+    entity_registry: er.EntityRegistry,
+    device_registry: dr.DeviceRegistry,
+) -> None:
+    """Test that already registered keys drop the connection path."""
+    device = copy.deepcopy(mock_openrgb_device)
+    device.metadata.serial = "IO2105F28204577"
+    device.metadata.location = "HID: /dev/hidraw31"
+    mock_openrgb_client.devices = [device]
+
+    mock_config_entry.add_to_hass(hass)
+
+    # Registered by an earlier version, on a path that has since changed
+    legacy_key = UID_SEPARATOR.join(
+        [
+            mock_config_entry.entry_id,
+            "DRAM",
+            "ENE",
+            "ENE SMBus Device",
+            "IO2105F28204577       ",
+            "HID: /dev/hidraw14",
+        ]
+    )
+    legacy_entity = entity_registry.async_get_or_create(
+        Platform.LIGHT, DOMAIN, legacy_key, config_entry=mock_config_entry
+    )
+    device_registry.async_get_or_create(
+        config_entry_id=mock_config_entry.entry_id,
+        identifiers={(DOMAIN, legacy_key)},
+    )
+    foreign_device = device_registry.async_get_or_create(
+        config_entry_id=mock_config_entry.entry_id,
+        identifiers={("other_domain", legacy_key)},
+    )
+
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    # Identifiers owned by another integration are left untouched
+    assert device_registry.async_get_device_by_identifier(
+        ("other_domain", legacy_key), mock_config_entry.entry_id
+    ) == device_registry.async_get(foreign_device.id)
+
+    stable_key = UID_SEPARATOR.join(
+        [
+            mock_config_entry.entry_id,
+            "DRAM",
+            "ENE",
+            "ENE SMBus Device",
+            "IO2105F28204577",
+        ]
+    )
+
+    # The existing entity was reused rather than replaced by a duplicate
+    migrated = entity_registry.async_get(legacy_entity.entity_id)
+    assert migrated
+    assert migrated.unique_id == stable_key
+    assert _light_unique_ids(entity_registry, mock_config_entry) == {stable_key}
+
+    assert device_registry.async_get_device_by_identifier(
+        (DOMAIN, stable_key), mock_config_entry.entry_id
+    )
+    assert not device_registry.async_get_device_by_identifier(
+        (DOMAIN, legacy_key), mock_config_entry.entry_id
+    )
+
+
+@pytest.mark.parametrize(
+    ("legacy_serial", "legacy_location", "expected_last_part"),
+    [
+        ("none", "I2C: PIIX4, address 0x70", "I2C: PIIX4, address 0x70"),
+        # Neither value was reported, so there is nothing to fall back to
+        ("none", "none", "none"),
+    ],
+)
+async def test_migrate_legacy_device_key_without_serial(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_openrgb_client: MagicMock,
+    entity_registry: er.EntityRegistry,
+    legacy_serial: str,
+    legacy_location: str,
+    expected_last_part: str,
+) -> None:
+    """Test that a key for a device without a serial keeps its location."""
+    mock_config_entry.add_to_hass(hass)
+
+    legacy_key = UID_SEPARATOR.join(
+        [
+            mock_config_entry.entry_id,
+            "DRAM",
+            "ENE",
+            "ENE SMBus Device",
+            legacy_serial,
+            legacy_location,
+        ]
+    )
+    legacy_entity = entity_registry.async_get_or_create(
+        Platform.LIGHT, DOMAIN, legacy_key, config_entry=mock_config_entry
+    )
+
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    migrated = entity_registry.async_get(legacy_entity.entity_id)
+    assert migrated
+    assert migrated.unique_id == UID_SEPARATOR.join(
+        [
+            mock_config_entry.entry_id,
+            "DRAM",
+            "ENE",
+            "ENE SMBus Device",
+            expected_last_part,
+        ]
+    )
+
+
+async def test_migrate_keeps_existing_duplicate(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_openrgb_client: MagicMock,
+    mock_openrgb_device: MagicMock,
+    entity_registry: er.EntityRegistry,
+    device_registry: dr.DeviceRegistry,
+) -> None:
+    """Test that migration does not collide with an existing registration.
+
+    A duplicate registered before the fix may already occupy the stable key, so
+    the legacy entry has to be left alone instead of failing the migration.
+    """
+    device = copy.deepcopy(mock_openrgb_device)
+    device.metadata.serial = "IO2105F28204577"
+    mock_openrgb_client.devices = [device]
+
+    mock_config_entry.add_to_hass(hass)
+
+    stable_key = UID_SEPARATOR.join(
+        [
+            mock_config_entry.entry_id,
+            "DRAM",
+            "ENE",
+            "ENE SMBus Device",
+            "IO2105F28204577",
+        ]
+    )
+    legacy_key = UID_SEPARATOR.join(
+        [
+            mock_config_entry.entry_id,
+            "DRAM",
+            "ENE",
+            "ENE SMBus Device",
+            "IO2105F28204577       ",
+            "HID: /dev/hidraw14",
+        ]
+    )
+    entity_registry.async_get_or_create(
+        Platform.LIGHT, DOMAIN, stable_key, config_entry=mock_config_entry
+    )
+    legacy_entity = entity_registry.async_get_or_create(
+        Platform.LIGHT, DOMAIN, legacy_key, config_entry=mock_config_entry
+    )
+    device_registry.async_get_or_create(
+        config_entry_id=mock_config_entry.entry_id,
+        identifiers={(DOMAIN, stable_key)},
+    )
+    legacy_device = device_registry.async_get_or_create(
+        config_entry_id=mock_config_entry.entry_id,
+        identifiers={(DOMAIN, legacy_key)},
+    )
+
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert mock_config_entry.state is ConfigEntryState.LOADED
+
+    assert device_registry.async_get_device_by_identifier(
+        (DOMAIN, legacy_key), mock_config_entry.entry_id
+    ) == device_registry.async_get(legacy_device.id)
+
+    untouched = entity_registry.async_get(legacy_entity.entity_id)
+    assert untouched
+    assert untouched.unique_id == legacy_key
