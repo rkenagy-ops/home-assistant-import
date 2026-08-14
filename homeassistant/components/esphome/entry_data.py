@@ -6,6 +6,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from functools import partial
 import logging
+import math
 from operator import delitem
 from typing import TYPE_CHECKING, Any, Final, TypedDict, cast
 
@@ -48,6 +49,7 @@ from aioesphomeapi import (
     build_device_unique_id,
 )
 from aioesphomeapi.model import ButtonInfo
+from aioesphomeapi.model_conversions import STATE_TYPE_TO_INFO_TYPE
 from bleak_esphome.backend.device import ESPHomeBluetoothDevice
 
 from homeassistant import config_entries
@@ -69,9 +71,53 @@ type DeviceEntityKey = tuple[int, int]  # (device_id, key)
 
 INFO_TO_COMPONENT_TYPE: Final = {v: k for k, v in COMPONENT_TYPE_TO_INFO.items()}
 
+# CameraState holds raw image bytes (not JSON-serializable, too large to store)
+# and Event is momentary (restoring one would replay a stale event), so both
+# are excluded from what gets persisted for deep-sleep state restore.
+STATE_TYPE_TO_COMPONENT_TYPE: Final[dict[type[EntityState], str]] = {
+    state_type: INFO_TO_COMPONENT_TYPE[info_type]
+    for state_type, info_type in STATE_TYPE_TO_INFO_TYPE.items()
+    if state_type not in (CameraState, Event)
+}
+COMPONENT_TYPE_TO_STATE_TYPE: Final[dict[str, type[EntityState]]] = {
+    component_type: state_type
+    for state_type, component_type in STATE_TYPE_TO_COMPONENT_TYPE.items()
+}
+
 _SENTINEL = object()
 SAVE_DELAY = 120
 _LOGGER = logging.getLogger(__name__)
+
+# orjson (used by Store) serializes NaN/inf/-inf floats as JSON null, which would
+# silently turn them into None on restore. Non-finite floats are common in ESPHome
+# state (e.g. NaN for an unknown sensor reading), so they are encoded as a sentinel
+# dict before saving and decoded back to the original float when loading.
+_NON_FINITE_KEY: Final = "__esphome_non_finite__"
+
+
+def _encode_non_finite_floats(value: Any) -> Any:
+    """Recursively replace non-finite floats with a reversible sentinel dict."""
+    if isinstance(value, float):
+        if math.isfinite(value):
+            return value
+        return {_NON_FINITE_KEY: repr(value)}
+    if isinstance(value, dict):
+        return {key: _encode_non_finite_floats(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_encode_non_finite_floats(item) for item in value]
+    return value
+
+
+def _decode_non_finite_floats(value: Any) -> Any:
+    """Recursively restore non-finite floats encoded by _encode_non_finite_floats."""
+    if isinstance(value, dict):
+        if (encoded := value.get(_NON_FINITE_KEY)) is not None and len(value) == 1:
+            return float(encoded)
+        return {key: _decode_non_finite_floats(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_decode_non_finite_floats(item) for item in value]
+    return value
+
 
 # Mapping from ESPHome info type to HA platform
 INFO_TYPE_TO_PLATFORM: dict[type[EntityInfo], Platform] = {
@@ -109,6 +155,8 @@ class StoreData(TypedDict, total=False):
     device_info: dict[str, Any]
     services: list[dict[str, Any]]
     api_version: dict[str, Any]
+    states: dict[str, list[dict[str, Any]]]
+    expected_disconnect: bool
 
 
 class ESPHomeStorage(Store[StoreData]):
@@ -411,6 +459,21 @@ class RuntimeEntryData:
 
         self.device_info = DeviceInfo.from_dict(restored.pop("device_info"))
         self.api_version = APIVersion.from_dict(restored.pop("api_version", {}))
+        # Pop unconditionally so these never leak into the entity-info loop below.
+        restored_states = restored.pop("states", None)
+        expected_disconnect = restored.pop("expected_disconnect", False)
+        if self.device_info.has_deep_sleep:
+            self.expected_disconnect = expected_disconnect
+            for comp_type, states in (restored_states or {}).items():
+                if (state_cls := COMPONENT_TYPE_TO_STATE_TYPE.get(comp_type)) is None:
+                    continue
+                for state in states:
+                    obj = state_cls.from_dict(_decode_non_finite_floats(state))
+                    self.state[state_cls][obj.key] = obj
+                    # Seed stale_state so the first real update after the
+                    # device wakes is always dispatched, even if the value
+                    # is identical to the restored one.
+                    self.stale_state.add((state_cls, obj.device_id, obj.key))
         infos: list[EntityInfo] = []
         for comp_type, restored_infos in restored.items():
             if TYPE_CHECKING:
@@ -441,6 +504,16 @@ class RuntimeEntryData:
         store_data["services"] = [
             service.to_dict() for service in self.services.values()
         ]
+        if self.device_info.has_deep_sleep:
+            store_data["expected_disconnect"] = self.expected_disconnect
+            store_data["states"] = {
+                STATE_TYPE_TO_COMPONENT_TYPE[state_type]: [
+                    _encode_non_finite_floats(state.to_dict())
+                    for state in states.values()
+                ]
+                for state_type, states in self.state.items()
+                if state_type in STATE_TYPE_TO_COMPONENT_TYPE
+            }
         if store_data == self._storage_contents:
             return
 
