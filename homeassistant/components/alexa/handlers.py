@@ -230,7 +230,11 @@ async def async_api_turn_on(
         context=context,
     )
 
-    return directive.response()
+    response = directive.response()
+    response.add_context_property(
+        {"name": "powerState", "namespace": "Alexa.PowerController", "value": "ON"}
+    )
+    return response
 
 
 @HANDLERS.register(("Alexa.PowerController", "TurnOff"))
@@ -283,7 +287,11 @@ async def async_api_turn_off(
         context=context,
     )
 
-    return directive.response()
+    response = directive.response()
+    response.add_context_property(
+        {"name": "powerState", "namespace": "Alexa.PowerController", "value": "OFF"}
+    )
+    return response
 
 
 @HANDLERS.register(("Alexa.BrightnessController", "SetBrightness"))
@@ -305,7 +313,15 @@ async def async_api_set_brightness(
         context=context,
     )
 
-    return directive.response()
+    response = directive.response()
+    response.add_context_property(
+        {
+            "name": "brightness",
+            "namespace": "Alexa.BrightnessController",
+            "value": brightness,
+        }
+    )
+    return response
 
 
 @HANDLERS.register(("Alexa.BrightnessController", "AdjustBrightness"))
@@ -357,7 +373,16 @@ async def async_api_set_color(
         context=context,
     )
 
-    return directive.response()
+    response = directive.response()
+    hsb = {
+        "hue": float(directive.payload["color"]["hue"]),
+        "saturation": float(directive.payload["color"]["saturation"]),
+        "brightness": float(directive.payload["color"]["brightness"]),
+    }
+    response.add_context_property(
+        {"name": "color", "namespace": "Alexa.ColorController", "value": hsb}
+    )
+    return response
 
 
 @HANDLERS.register(("Alexa.ColorTemperatureController", "SetColorTemperature"))
@@ -379,7 +404,15 @@ async def async_api_set_color_temperature(
         context=context,
     )
 
-    return directive.response()
+    response = directive.response()
+    response.add_context_property(
+        {
+            "name": "colorTemperatureInKelvin",
+            "namespace": "Alexa.ColorController",
+            "value": kelvin,
+        }
+    )
+    return response
 
 
 @HANDLERS.register(("Alexa.ColorTemperatureController", "DecreaseColorTemperature"))
