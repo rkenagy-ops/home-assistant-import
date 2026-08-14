@@ -7,9 +7,9 @@ from unittest.mock import AsyncMock, patch
 from aiolanbon import LanbonAuthError, LanbonConnectionError
 import pytest
 
-from homeassistant.components.lanbon.const import CONF_MAC, DOMAIN
+from homeassistant.components.lanbon.const import DOMAIN
 from homeassistant.config_entries import SOURCE_USER, SOURCE_ZEROCONF
-from homeassistant.const import CONF_HOST, CONF_PORT, CONF_TOKEN
+from homeassistant.const import CONF_HOST, CONF_MAC, CONF_PORT, CONF_TOKEN
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo

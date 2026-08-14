@@ -35,9 +35,7 @@ async def test_setup_and_unload(
     assert entry.state is ConfigEntryState.LOADED
     mock_api.ws_listen.assert_called()
 
-    hub = device_registry.async_get_device_by_identifier(
-        (DOMAIN, MAC), entry.entry_id
-    )
+    hub = device_registry.async_get_device_by_identifier((DOMAIN, MAC), entry.entry_id)
     child = device_registry.async_get_device_by_identifier(
         (DOMAIN, CHILD_MAC), entry.entry_id
     )

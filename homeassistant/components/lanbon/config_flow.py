@@ -7,19 +7,12 @@ from aiolanbon import LanbonAuthError, LanbonClient, LanbonConnectionError
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
-from homeassistant.const import CONF_HOST, CONF_PORT, CONF_TOKEN
+from homeassistant.const import CONF_HOST, CONF_MAC, CONF_PORT, CONF_TOKEN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 
-from .const import (
-    CONF_MAC,
-    CONF_SW_TYPE,
-    CONF_TYPE_NAME,
-    DEFAULT_PORT,
-    DOMAIN,
-    SUPPORTED_PROTO,
-)
+from .const import CONF_SW_TYPE, CONF_TYPE_NAME, DEFAULT_PORT, DOMAIN, SUPPORTED_PROTO
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -87,7 +80,11 @@ class LanbonConfigFlow(ConfigFlow, domain=DOMAIN):
             errors["base"] = "not_root"
             return None
 
-        mac = str(info[CONF_MAC]).upper()
+        mac_raw = info.get(CONF_MAC)
+        if not mac_raw:
+            errors["base"] = "unknown"
+            return None
+        mac = str(mac_raw).upper()
         if info.get(CONF_SW_TYPE) is not None:
             self._sw_type = info.get(CONF_SW_TYPE)
         self._set_type_name(

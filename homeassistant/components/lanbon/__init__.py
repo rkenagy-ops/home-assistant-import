@@ -3,12 +3,12 @@
 from aiolanbon import LanbonClient
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_HOST, CONF_PORT, CONF_TOKEN, Platform
+from homeassistant.const import CONF_HOST, CONF_MAC, CONF_PORT, CONF_TOKEN, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .const import CONF_MAC, DOMAIN
+from .const import DOMAIN
 from .coordinator import LanbonCoordinator
 
 PLATFORMS = [Platform.SWITCH]
@@ -36,7 +36,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: LanbonConfigEntry) -> bo
     registry.async_get_or_create(
         config_entry_id=entry.entry_id,
         identifiers={(DOMAIN, host_mac)},
-        connections={(dr.CONNECTION_NETWORK_MAC, dr.format_mac(host_mac))},
+        connections={(dr.CONNECTION_NETWORK_MAC, host_mac)},
         manufacturer="LANBON",
         name=host_info.get("name") or f"LANBON {host_mac[-4:]}",
         model=str(host_info.get("kind") or "host"),
@@ -49,7 +49,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: LanbonConfigEntry) -> bo
         registry.async_get_or_create(
             config_entry_id=entry.entry_id,
             identifiers={(DOMAIN, mac)},
-            connections={(dr.CONNECTION_NETWORK_MAC, dr.format_mac(mac))},
+            connections={(dr.CONNECTION_NETWORK_MAC, mac)},
             manufacturer="LANBON",
             name=dev.get("name") or f"LANBON {mac[-4:]}",
             model=str(dev.get("kind") or "node"),

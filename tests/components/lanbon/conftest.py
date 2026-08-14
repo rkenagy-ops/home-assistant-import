@@ -6,13 +6,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from homeassistant.components.lanbon.const import (
-    CONF_MAC,
-    CONF_SW_TYPE,
-    CONF_TYPE_NAME,
-    DOMAIN,
-)
-from homeassistant.const import CONF_HOST, CONF_PORT, CONF_TOKEN
+from homeassistant.components.lanbon.const import CONF_SW_TYPE, CONF_TYPE_NAME, DOMAIN
+from homeassistant.const import CONF_HOST, CONF_MAC, CONF_PORT, CONF_TOKEN
 from homeassistant.core import HomeAssistant
 
 from tests.common import MockConfigEntry
