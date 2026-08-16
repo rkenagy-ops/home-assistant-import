@@ -1,0 +1,28 @@
+.pot_transfer_fields: &pot_transfer_fields
+  account:
+    required: true
+    selector:
+      device:
+        filter:
+          integration: monzo
+          model_id: account
+  pot:
+    required: true
+    selector:
+      device:
+        filter:
+          integration: monzo
+          model_id: pot
+  amount:
+    required: true
+    selector:
+      number:
+        min: 0.01
+        step: 0.01
+        mode: box
+
+deposit_into_pot:
+  fields: *pot_transfer_fields
+
+withdraw_from_pot:
+  fields: *pot_transfer_fields
