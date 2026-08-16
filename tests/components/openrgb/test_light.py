@@ -78,7 +78,7 @@ async def test_entities(
                     "DRAM",
                     "ENE",
                     "ENE SMBus Device",
-                    "none",
+                    # This device reports no serial, so it falls back to location
                     "I2C: PIIX4, address 0x70",
                 ]
             ),
@@ -840,14 +840,15 @@ async def test_duplicate_device_names(
     assert mock_config_entry.state is ConfigEntryState.LOADED
 
     # The device key format is:
-    # entry_id||type||vendor||description||serial||location
+    # entry_id||type||vendor||description||serial or location
+    # These devices report no serial, so they are told apart by location
     device1_key = (
         f"{mock_config_entry.entry_id}||DRAM||ENE||"
-        "ENE SMBus Device||none||I2C: PIIX4, address 0x71"
+        "ENE SMBus Device||I2C: PIIX4, address 0x71"
     )
     device2_key = (
         f"{mock_config_entry.entry_id}||DRAM||ENE||"
-        "ENE SMBus Device||none||I2C: PIIX4, address 0x72"
+        "ENE SMBus Device||I2C: PIIX4, address 0x72"
     )
 
     # Verify devices exist with correct names (suffix based on device.id position)
