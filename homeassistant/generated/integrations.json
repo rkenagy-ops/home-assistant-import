@@ -8467,6 +8467,10 @@
       "integration_type": "helper",
       "config_flow": false
     },
+    "input_color": {
+      "integration_type": "helper",
+      "config_flow": false
+    },
     "input_datetime": {
       "integration_type": "helper",
       "config_flow": false
@@ -8584,6 +8588,7 @@
     "homekit_controller",
     "input_boolean",
     "input_button",
+    "input_color",
     "input_datetime",
     "input_number",
     "input_select",
