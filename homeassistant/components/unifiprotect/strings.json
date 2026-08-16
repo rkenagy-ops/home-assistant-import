@@ -186,20 +186,11 @@
       "humidity_sensor": {
         "name": "Humidity sensor"
       },
-      "humidity_sensor_enabled": {
-        "name": "Humidity sensor enabled"
-      },
       "is_dark": {
         "name": "Is dark"
       },
       "light_sensor": {
         "name": "Light sensor"
-      },
-      "light_sensor_enabled": {
-        "name": "Light sensor enabled"
-      },
-      "motion_detection_enabled": {
-        "name": "Motion detection enabled"
       },
       "object_detected": {
         "name": "Object detected"
@@ -239,9 +230,6 @@
       },
       "temperature_sensor": {
         "name": "Temperature sensor"
-      },
-      "temperature_sensor_enabled": {
-        "name": "Temperature sensor enabled"
       },
       "tracking_person": {
         "name": "Tracking: person"
@@ -824,6 +812,10 @@
         }
       },
       "title": "No stream is available for camera {camera}"
+    },
+    "sense_setting_mirror_removed": {
+      "description": "The read-only entity `{entity_id}` has been removed. Where the sensor supports the setting, its switch or number holds the same state and is no longer restricted to users with write access. Where it does not, the setting is gone with the entity.\n\nUpdate the following automations and scripts:\n{items}",
+      "title": "Read-only sensor setting entity removed"
     }
   },
   "options": {
