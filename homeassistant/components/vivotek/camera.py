@@ -1,14 +1,18 @@
 """Support for Vivotek IP Cameras."""
 
+import asyncio
+from collections.abc import Callable
+from functools import partial
 import logging
-from typing import TYPE_CHECKING, Final, override
+from typing import TYPE_CHECKING, Any, Final, override
 
-from libpyvivotek.vivotek import VivotekCamera
+from libpyvivotek.vivotek import VivotekCamera, VivotekCameraError
 
 from homeassistant.components.camera import Camera, CameraEntityFeature
 from homeassistant.const import CONF_IP_ADDRESS, CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import VivotekConfigEntry
@@ -26,6 +30,21 @@ DEFAULT_STREAM_SOURCE = "live.sdp"
 PLATFORM_SCHEMA: Final = cv.removed(DOMAIN, raise_if_present=False)
 
 
+async def _async_fetch_str_metadata(
+    hass: HomeAssistant,
+    fetcher: Callable[[], Any],
+    log_message: str,
+) -> str | None:
+    """Fetch optional string metadata from the camera."""
+    try:
+        value: Any = await hass.async_add_executor_job(fetcher)
+    except VivotekCameraError:
+        _LOGGER.debug(log_message)
+        return None
+
+    return value if isinstance(value, str) else None
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: VivotekConfigEntry,
@@ -38,6 +57,24 @@ async def async_setup_entry(
         f"rtsp://{creds}@{config[CONF_IP_ADDRESS]}:554/{config[CONF_STREAM_PATH]}"
     )
     cam_client = entry.runtime_data
+    serial_number, sw_version, model = await asyncio.gather(
+        _async_fetch_str_metadata(
+            hass,
+            cam_client.get_serial,
+            f"Failed to fetch serial number for {entry.title}",
+        ),
+        _async_fetch_str_metadata(
+            hass,
+            partial(cam_client.get_param, "system_info_firmwareversion"),
+            f"Failed to fetch firmware version for {entry.title}",
+        ),
+        _async_fetch_str_metadata(
+            hass,
+            partial(cam_client.get_param, "system_info_modelname"),
+            f"Failed to fetch model for {entry.title}",
+        ),
+    )
+
     if TYPE_CHECKING:
         assert entry.unique_id is not None
     async_add_entities(
@@ -46,6 +83,9 @@ async def async_setup_entry(
                 cam_client,
                 stream_source,
                 entry.unique_id,
+                serial_number,
+                sw_version,
+                model,
                 entry.options[CONF_FRAMERATE],
                 entry.title,
             )
@@ -64,6 +104,9 @@ class VivotekCam(Camera):
         cam_client: VivotekCamera,
         stream_source: str,
         unique_id: str,
+        serial_number: str | None,
+        sw_version: str | None,
+        model: str | None,
         framerate: int,
         name: str,
     ) -> None:
@@ -73,7 +116,16 @@ class VivotekCam(Camera):
         self._attr_frame_interval = 1 / framerate
         self._attr_unique_id = unique_id
         self._attr_name = name
+        self._attr_available = True
         self._stream_source = stream_source
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, unique_id)},
+            manufacturer=DEFAULT_CAMERA_BRAND,
+            model=model,
+            name=name,
+            serial_number=serial_number,
+            sw_version=sw_version,
+        )
 
     @override
     def camera_image(
@@ -101,5 +153,9 @@ class VivotekCam(Camera):
 
     def update(self) -> None:
         """Update entity status."""
-        self._attr_model = self._cam.model_name
-        self._attr_available = self._attr_model is not None
+        try:
+            self._cam.get_serial()
+        except VivotekCameraError:
+            self._attr_available = False
+        else:
+            self._attr_available = True
