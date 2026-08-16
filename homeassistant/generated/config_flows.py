@@ -200,6 +200,7 @@ FLOWS = {
         "electric_kiwi",
         "elevenlabs",
         "elgato",
+        "elke27",
         "elkm1",
         "elmax",
         "elvia",
