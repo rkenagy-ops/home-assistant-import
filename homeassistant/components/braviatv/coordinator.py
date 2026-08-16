@@ -142,14 +142,46 @@ class BraviaTVCoordinator(DataUpdateCoordinator[None]):
         """Extend source map and source list."""
         if sort_by:
             sources = sorted(sources, key=lambda d: d.get(sort_by, ""))
+        # Reserve every generic connector name up front, so that a custom label
+        # can never shadow another input and leave it unreachable. Names are
+        # compared casefolded, like async_source_find does.
+        reserved = {item["title"].casefold() for item in sources if item.get("title")}
+        taken = {name.casefold() for name in self.source_list} if add_to_list else set()
         for item in sources:
             title = item.get("title")
             uri = item.get("uri")
-            if not title or not uri:
+            # Sony TVs report the generic connector name in "title" and the name
+            # the user configured on the TV itself in "label". Prefer the latter,
+            # unless it is already used or belongs to a different input.
+            label = item.get("label")
+            name = None
+            if label:
+                folded = label.casefold()
+                own = title is not None and folded == title.casefold()
+                if folded not in taken and (own or folded not in reserved):
+                    name = label
+            # Inputs are reported without a title on some models.
+            if name is None:
+                name = title or label
+            if not name or not uri:
                 continue
-            self.source_map[uri] = {**item, "type": source_type}
-            if add_to_list and title not in self.source_list:
-                self.source_list.append(title)
+            # The fallback can collide as well, so make it unique instead of
+            # dropping the input. A generated name may not take a generic name
+            # that belongs to another input either.
+            own = title.casefold() if title else None
+            base = name
+            suffix = 2
+            while name.casefold() in taken or (
+                name.casefold() in reserved and name.casefold() != own
+            ):
+                name = f"{base} ({suffix})"
+                suffix += 1
+            taken.add(name.casefold())
+            # "title" is kept untouched so that select_source keeps working with
+            # the generic name for anyone already using it.
+            self.source_map[uri] = {**item, "name": name, "type": source_type}
+            if add_to_list and name not in self.source_list:
+                self.source_list.append(name)
 
     @override
     async def _async_update_data(self) -> None:
@@ -251,7 +283,8 @@ class BraviaTVCoordinator(DataUpdateCoordinator[None]):
         if self.media_uri:
             self.media_content_id = self.media_uri
             if self.media_uri[:8] == "extInput":
-                self.source = playing_info.get("title")
+                source = self.source_map.get(self.media_uri, {})
+                self.source = source.get("name") or playing_info.get("title")
             if self.media_uri[:2] == "tv":
                 self.media_content_id = playing_info.get("dispNum")
                 self.media_title = (
@@ -299,11 +332,17 @@ class BraviaTVCoordinator(DataUpdateCoordinator[None]):
                     if num and int(query) == int(num):
                         return await self.async_source_start(uri, source_type)
                 else:
-                    title: str = item["title"]
-                    if query.lower() == title.lower():
-                        return await self.async_source_start(uri, source_type)
-                    if query.lower() in title.lower():
-                        coarse_uri = uri
+                    # Both names are matched so that automations written
+                    # before an input was renamed keep working.
+                    folded_query = query.casefold()
+                    for name in (item.get("name"), item.get("title")):
+                        if not name:
+                            continue
+                        folded = name.casefold()
+                        if folded_query == folded:
+                            return await self.async_source_start(uri, source_type)
+                        if folded_query in folded:
+                            coarse_uri = uri
         if coarse_uri:
             return await self.async_source_start(coarse_uri, source_type)
         raise ValueError(f"Not found {source_type}: {query}")
