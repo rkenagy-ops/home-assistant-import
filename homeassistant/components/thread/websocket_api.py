@@ -40,9 +40,18 @@ async def ws_add_dataset(
     tlv = msg["tlv"]
 
     try:
-        await dataset_store.async_add_dataset(hass, source, tlv)
+        result = await dataset_store.async_add_dataset(hass, source, tlv)
     except TLVError as exc:
         connection.send_error(msg["id"], websocket_api.ERR_INVALID_FORMAT, str(exc))
+        return
+
+    if result is dataset_store.DatasetAddResult.DISCARDED:
+        connection.send_error(
+            msg["id"],
+            "dataset_discarded",
+            "A dataset with the same or a newer active timestamp is already"
+            " stored for this Thread network",
+        )
         return
 
     connection.send_result(msg["id"])

@@ -2744,7 +2744,7 @@ python-opensky==1.0.1
 
 # homeassistant.components.otbr
 # homeassistant.components.thread
-python-otbr-api==2.10.0
+python-otbr-api==2.11.0
 
 # homeassistant.components.overseerr
 python-overseerr==0.9.0

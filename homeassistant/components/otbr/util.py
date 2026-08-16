@@ -1,5 +1,6 @@
 """Utility functions for the Open Thread Border Router integration."""
 
+import asyncio
 from collections.abc import Callable, Coroutine
 import dataclasses
 from functools import wraps
@@ -19,9 +20,10 @@ from homeassistant.components.homeassistant_hardware.silabs_multiprotocol_addon 
     is_multiprotocol_url,
 )
 from homeassistant.config_entries import SOURCE_USER
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.util.hass_dict import HassKey
 
 from .const import DOMAIN
 
@@ -29,6 +31,31 @@ if TYPE_CHECKING:
     from . import OTBRConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
+
+
+DATASET_LOCK_KEY: HassKey[asyncio.Lock] = HassKey("otbr_dataset_lock")
+# Newest timestamp this integration has issued, per source network. Keyed by
+# extended PAN ID: a busy network must not raise the floor for the others,
+# which would eventually exhaust their timestamps too.
+ISSUED_TIMESTAMPS_KEY: HassKey[dict[str, tuple[int, int]]] = HassKey(
+    "otbr_issued_timestamps"
+)
+
+
+@callback
+def async_get_dataset_lock(hass: HomeAssistant) -> asyncio.Lock:
+    """Return the lock serializing dataset mutations.
+
+    It covers every config entry, and is acquired by callers rather than by
+    the OTBRData methods, so a sequence that reads the router's state and
+    writes it back stays atomic: concurrent writers would otherwise work from
+    state the other has already replaced, and the mesh silently ignores
+    whichever pending dataset is not the newest while its writer still
+    reports success.
+    """
+    if (lock := hass.data.get(DATASET_LOCK_KEY)) is None:
+        lock = hass.data[DATASET_LOCK_KEY] = asyncio.Lock()
+    return lock
 
 
 INSECURE_NETWORK_KEYS = (
@@ -142,6 +169,11 @@ class OTBRData:
     async def set_active_dataset_tlvs(self, dataset: bytes) -> None:
         """Set current active operational dataset in TLVS format."""
         await self.api.set_active_dataset_tlvs(dataset)
+
+    @_handle_otbr_error
+    async def set_pending_dataset_tlvs(self, dataset: bytes) -> None:
+        """Set the pending operational dataset in TLVS format."""
+        await self.api.set_pending_dataset_tlvs(dataset)
 
     @_handle_otbr_error
     async def set_channel(
