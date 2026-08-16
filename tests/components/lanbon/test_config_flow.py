@@ -1,0 +1,375 @@
+"""Tests for the LANBON integration config flow."""
+
+from collections.abc import Generator
+from ipaddress import ip_address
+from unittest.mock import AsyncMock, patch
+
+from aiolanbon import LanbonAuthError, LanbonConnectionError
+import pytest
+
+from homeassistant.components.lanbon.const import DOMAIN
+from homeassistant.config_entries import SOURCE_USER, SOURCE_ZEROCONF
+from homeassistant.const import CONF_HOST, CONF_MAC, CONF_PORT, CONF_TOKEN
+from homeassistant.core import HomeAssistant
+from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
+
+from .conftest import HOST, INFO_ROOT, MAC, PORT, TOKEN
+
+from tests.common import MockConfigEntry
+
+
+@pytest.fixture(autouse=True)
+def mock_setup_entry() -> Generator[None]:
+    """Prevent actual setup during config flow tests."""
+    with patch(
+        "homeassistant.components.lanbon.async_setup_entry",
+        return_value=True,
+    ):
+        yield
+
+
+def _discovery(**properties: str) -> ZeroconfServiceInfo:
+    return ZeroconfServiceInfo(
+        ip_address=ip_address(HOST),
+        ip_addresses=[ip_address(HOST)],
+        port=PORT,
+        hostname="lanbon.local.",
+        type="_lanbon._tcp.local.",
+        name="4gang Switch._lanbon._tcp.local.",
+        properties=properties,
+    )
+
+
+async def test_user_flow(hass: HomeAssistant) -> None:
+    """Test user config flow success."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "user"
+
+    with patch(
+        "homeassistant.components.lanbon.config_flow.LanbonClient.get_info",
+        new=AsyncMock(return_value=INFO_ROOT),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_HOST: HOST, CONF_TOKEN: TOKEN},
+        )
+        await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["title"] == "4gang Switch"
+    assert result["data"][CONF_HOST] == HOST
+    assert result["data"][CONF_PORT] == PORT
+    assert result["data"][CONF_TOKEN] == TOKEN
+    assert result["data"][CONF_MAC] == MAC
+
+
+async def test_user_flow_recovers_after_errors(hass: HomeAssistant) -> None:
+    """Test user flow recovers after auth and connection errors."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+
+    with patch(
+        "homeassistant.components.lanbon.config_flow.LanbonClient.get_info",
+        new=AsyncMock(side_effect=LanbonAuthError("bad")),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_HOST: HOST, CONF_TOKEN: "bad"},
+        )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"]["base"] == "invalid_auth"
+
+    with patch(
+        "homeassistant.components.lanbon.config_flow.LanbonClient.get_info",
+        new=AsyncMock(side_effect=LanbonConnectionError("down")),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_HOST: HOST, CONF_TOKEN: TOKEN},
+        )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"]["base"] == "cannot_connect"
+
+    with patch(
+        "homeassistant.components.lanbon.config_flow.LanbonClient.get_info",
+        new=AsyncMock(return_value=INFO_ROOT),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_HOST: HOST, CONF_TOKEN: TOKEN},
+        )
+        await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_MAC] == MAC
+
+
+async def test_user_invalid_auth(hass: HomeAssistant) -> None:
+    """Test invalid token."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    with patch(
+        "homeassistant.components.lanbon.config_flow.LanbonClient.get_info",
+        new=AsyncMock(side_effect=LanbonAuthError("bad")),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_HOST: HOST, CONF_TOKEN: "bad"},
+        )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"]["base"] == "invalid_auth"
+
+
+async def test_user_cannot_connect(hass: HomeAssistant) -> None:
+    """Test connection failure."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    with patch(
+        "homeassistant.components.lanbon.config_flow.LanbonClient.get_info",
+        new=AsyncMock(side_effect=LanbonConnectionError("down")),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_HOST: HOST, CONF_TOKEN: TOKEN},
+        )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"]["base"] == "cannot_connect"
+
+
+async def test_user_not_root(hass: HomeAssistant) -> None:
+    """Test rejecting non-root panels."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    info = {**INFO_ROOT, "is_root": False}
+    with patch(
+        "homeassistant.components.lanbon.config_flow.LanbonClient.get_info",
+        new=AsyncMock(return_value=info),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_HOST: HOST, CONF_TOKEN: TOKEN},
+        )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"]["base"] == "not_root"
+
+
+async def test_user_missing_is_root(hass: HomeAssistant) -> None:
+    """Test rejecting responses without an explicit is_root=true."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    info = {k: v for k, v in INFO_ROOT.items() if k != "is_root"}
+    with patch(
+        "homeassistant.components.lanbon.config_flow.LanbonClient.get_info",
+        new=AsyncMock(return_value=info),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_HOST: HOST, CONF_TOKEN: TOKEN},
+        )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"]["base"] == "not_root"
+
+
+async def test_user_unsupported_proto(hass: HomeAssistant) -> None:
+    """Test rejecting unsupported protocol versions."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    info = {**INFO_ROOT, "proto": 99}
+    with patch(
+        "homeassistant.components.lanbon.config_flow.LanbonClient.get_info",
+        new=AsyncMock(return_value=info),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_HOST: HOST, CONF_TOKEN: TOKEN},
+        )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"]["base"] == "unsupported_proto"
+
+
+async def test_user_missing_mac(hass: HomeAssistant) -> None:
+    """Test rejecting info responses without a MAC."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    info = {k: v for k, v in INFO_ROOT.items() if k != "mac"}
+    with patch(
+        "homeassistant.components.lanbon.config_flow.LanbonClient.get_info",
+        new=AsyncMock(return_value=info),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_HOST: HOST, CONF_TOKEN: TOKEN},
+        )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"]["base"] == "unknown"
+
+
+async def test_zeroconf_flow(hass: HomeAssistant) -> None:
+    """Test zeroconf discovery confirm uses the mDNS token."""
+    discovery = _discovery(
+        mac=MAC.lower(),
+        token=TOKEN,
+        type_name="4gang Switch",
+        sw_type="224",
+    )
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_ZEROCONF}, data=discovery
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "discovery_confirm"
+
+    with patch(
+        "homeassistant.components.lanbon.config_flow.LanbonClient.get_info",
+        new=AsyncMock(return_value=INFO_ROOT),
+    ):
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+        await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_MAC] == MAC
+    assert result["data"][CONF_PORT] == PORT
+    assert result["data"][CONF_TOKEN] == TOKEN
+
+
+async def test_zeroconf_missing_mac_or_token(hass: HomeAssistant) -> None:
+    """Discovery without MAC or token is aborted."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": SOURCE_ZEROCONF},
+        data=_discovery(token=TOKEN),
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "invalid_discovery_info"
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": SOURCE_ZEROCONF},
+        data=_discovery(mac=MAC.lower()),
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "invalid_discovery_info"
+
+
+async def test_zeroconf_invalid_sw_type(hass: HomeAssistant) -> None:
+    """Test discovery tolerates a non-integer sw_type property."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": SOURCE_ZEROCONF},
+        data=_discovery(mac=MAC.lower(), token=TOKEN, sw_type="not-int"),
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "discovery_confirm"
+
+
+async def test_zeroconf_invalid_auth(hass: HomeAssistant) -> None:
+    """Test discovery confirm with invalid token."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": SOURCE_ZEROCONF},
+        data=_discovery(mac=MAC.lower(), token=TOKEN),
+    )
+    with patch(
+        "homeassistant.components.lanbon.config_flow.LanbonClient.get_info",
+        new=AsyncMock(side_effect=LanbonAuthError("bad")),
+    ):
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"]["base"] == "invalid_auth"
+
+
+async def test_zeroconf_cannot_connect(hass: HomeAssistant) -> None:
+    """Test discovery confirm with connection failure."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": SOURCE_ZEROCONF},
+        data=_discovery(mac=MAC.lower(), token=TOKEN),
+    )
+    with patch(
+        "homeassistant.components.lanbon.config_flow.LanbonClient.get_info",
+        new=AsyncMock(side_effect=LanbonConnectionError("down")),
+    ):
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"]["base"] == "cannot_connect"
+
+
+async def test_zeroconf_not_root(hass: HomeAssistant) -> None:
+    """Test discovery confirm rejecting non-root panels."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": SOURCE_ZEROCONF},
+        data=_discovery(mac=MAC.lower(), token=TOKEN),
+    )
+    with patch(
+        "homeassistant.components.lanbon.config_flow.LanbonClient.get_info",
+        new=AsyncMock(return_value={**INFO_ROOT, "is_root": False}),
+    ):
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"]["base"] == "not_root"
+
+
+async def test_abort_already_configured(hass: HomeAssistant) -> None:
+    """Test abort when unique_id exists (user flow does not update host)."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=MAC,
+        data={CONF_HOST: HOST, CONF_PORT: PORT, CONF_TOKEN: TOKEN, CONF_MAC: MAC},
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    with patch(
+        "homeassistant.components.lanbon.config_flow.LanbonClient.get_info",
+        new=AsyncMock(return_value=INFO_ROOT),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_HOST: "10.0.0.2", CONF_TOKEN: TOKEN},
+        )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert entry.data[CONF_HOST] == HOST
+    assert entry.data[CONF_PORT] == PORT
+
+
+async def test_zeroconf_updates_host_when_already_configured(
+    hass: HomeAssistant,
+) -> None:
+    """Zeroconf may refresh host/port for an existing unique_id."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=MAC,
+        data={CONF_HOST: HOST, CONF_PORT: PORT, CONF_TOKEN: TOKEN, CONF_MAC: MAC},
+    )
+    entry.add_to_hass(hass)
+
+    discovery = ZeroconfServiceInfo(
+        ip_address=ip_address("10.0.0.9"),
+        ip_addresses=[ip_address("10.0.0.9")],
+        port=9000,
+        hostname="lanbon.local.",
+        type="_lanbon._tcp.local.",
+        name="4gang Switch._lanbon._tcp.local.",
+        properties={"mac": MAC.lower(), "token": TOKEN},
+    )
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_ZEROCONF}, data=discovery
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert entry.data[CONF_HOST] == "10.0.0.9"
+    assert entry.data[CONF_PORT] == 9000

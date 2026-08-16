@@ -1,0 +1,36 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "[%key:common::config_flow::abort::already_configured_device%]",
+      "invalid_discovery_info": "Discovered device did not provide a MAC address and token"
+    },
+    "error": {
+      "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
+      "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
+      "not_root": "Device is not Mesh root — only the root panel exposes the local API",
+      "unknown": "[%key:common::config_flow::error::unknown%]",
+      "unsupported_proto": "Unsupported LANBON API protocol version"
+    },
+    "step": {
+      "discovery_confirm": {
+        "data": {
+          "token": "[%key:common::config_flow::data::api_token%]"
+        },
+        "description": "Add {name} at {host}?",
+        "title": "Discovered {name}"
+      },
+      "user": {
+        "data": {
+          "host": "[%key:common::config_flow::data::host%]",
+          "token": "[%key:common::config_flow::data::api_token%]"
+        },
+        "data_description": {
+          "host": "LAN IP of the Mesh root panel.",
+          "token": "32-character hex token from the device log line containing token=."
+        },
+        "description": "Enter the Mesh root panel IP and Bearer token (serial log or mDNS TXT).",
+        "title": "LANBON host"
+      }
+    }
+  }
+}
