@@ -1,0 +1,64 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "[%key:common::config_flow::abort::already_configured_device%]",
+      "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]"
+    },
+    "error": {
+      "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]"
+    },
+    "step": {
+      "user": {
+        "data": {
+          "host": "[%key:common::config_flow::data::host%]"
+        },
+        "data_description": {
+          "host": "Hostname or IP address of your Bitvis Power Hub device."
+        },
+        "description": "Enter the network details for your Bitvis Power Hub device",
+        "title": "Set up Bitvis Power Hub"
+      },
+      "zeroconf_confirm": {
+        "description": "Do you want to add the discovered Bitvis Power Hub ({name}) at {host} to Home Assistant?",
+        "title": "Discovered Bitvis Power Hub"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "energy_active": {
+        "name": "Active energy {direction}"
+      },
+      "energy_reactive": {
+        "name": "Reactive energy {direction}"
+      },
+      "han_msg_buffer_overflow": {
+        "name": "HAN buffer overflows"
+      },
+      "han_msg_successfully_parsed": {
+        "name": "HAN messages successfully parsed"
+      },
+      "phase_current": {
+        "name": "Current {phase}"
+      },
+      "phase_voltage": {
+        "name": "Voltage {phase}"
+      },
+      "power_active": {
+        "name": "Active power {direction}"
+      },
+      "power_active_phase": {
+        "name": "Active power {direction} {phase}"
+      },
+      "power_reactive": {
+        "name": "Reactive power {direction}"
+      },
+      "power_reactive_phase": {
+        "name": "Reactive power {direction} {phase}"
+      },
+      "wifi_rssi": {
+        "name": "Wi-Fi signal strength"
+      }
+    }
+  }
+}
