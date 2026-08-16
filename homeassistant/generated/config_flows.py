@@ -905,6 +905,7 @@ FLOWS = {
         "zerproc",
         "zeversolar",
         "zha",
+        "zhong_hong",
         "zimi",
         "zinvolt",
         "zodiac",
