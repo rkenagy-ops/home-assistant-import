@@ -31,14 +31,11 @@
   },
   "entity": {
     "sensor": {
+      "domain_expiration": {
+        "name": "Domain expiration"
+      },
       "last_event": {
-        "name": "Last event",
-        "state": {
-          "healthy": "Healthy",
-          "resolved": "Resolved",
-          "start": "Started",
-          "unhealthy": "Unhealthy"
-        }
+        "name": "Last event"
       },
       "response_time": {
         "name": "Response time"
