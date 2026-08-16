@@ -225,6 +225,7 @@ FLOWS = {
         "eufylife_ble",
         "eurotronic_cometblue",
         "evil_genius_labs",
+        "evohome",
         "ezviz",
         "faa_delays",
         "fastdotcom",
