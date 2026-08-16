@@ -70,6 +70,41 @@ async def test_flow(
     assert result["data"] == USER_INPUT
 
 
+async def test_flow_warms_loader_caches_in_list_buckets(
+    hass: HomeAssistant,
+    mock_idrive_client: AsyncMock,
+) -> None:
+    """Test config flow list_buckets uses warm_up_loader_caches."""
+    create_client = AsyncMock(name="create_client")
+    create_client.__aenter__.return_value.list_buckets.return_value = {
+        "Buckets": [{"Name": USER_INPUT[CONF_BUCKET]}]
+    }
+
+    with patch(
+        "homeassistant.components.idrive_e2.config_flow.AioSession.create_client",
+        return_value=create_client,
+    ) as patched_create_client:
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": SOURCE_USER}
+        )
+        assert result["type"] is FlowResultType.FORM
+        assert result["step_id"] == "user"
+
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {
+                CONF_ACCESS_KEY_ID: USER_INPUT[CONF_ACCESS_KEY_ID],
+                CONF_SECRET_ACCESS_KEY: USER_INPUT[CONF_SECRET_ACCESS_KEY],
+            },
+        )
+
+    assert patched_create_client.called
+    assert patched_create_client.call_args.kwargs["config"].warm_up_loader_caches
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "bucket"
+
+
 @pytest.mark.parametrize(
     ("exception", "errors"),
     [
