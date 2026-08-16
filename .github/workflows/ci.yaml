@@ -120,7 +120,7 @@ jobs:
         run: |
           echo "key=$(lsb_release -rs)-apt-${CACHE_VERSION}-${HA_SHORT_VERSION}" >> $GITHUB_OUTPUT
       - name: Filter for core changes
-        uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: core
         with:
           filters: .core_files.yaml
@@ -135,7 +135,7 @@ jobs:
           echo "Result:"
           cat .integration_paths.yaml
       - name: Filter for integration changes
-        uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: integrations
         with:
           filters: .integration_paths.yaml
