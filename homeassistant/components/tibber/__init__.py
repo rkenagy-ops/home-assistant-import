@@ -17,7 +17,11 @@ from homeassistant.exceptions import (
     OAuth2TokenRequestError,
     OAuth2TokenRequestReauthError,
 )
-from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import (
+    config_validation as cv,
+    device_registry as dr,
+    entity_registry as er,
+)
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.config_entry_oauth2_flow import (
     ImplementationUnavailableError,
@@ -43,6 +47,48 @@ DISCONNECT_TIMEOUT: Final = 10
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _migrate_data_api_registry_entries(
+    hass: HomeAssistant,
+    entry: TibberConfigEntry,
+    coordinator: TibberDataAPICoordinator,
+) -> None:
+    """Migrate Data API registry entries to Tibber device IDs."""
+    entity_registry = er.async_get(hass)
+    entity_entries = er.async_entries_for_config_entry(entity_registry, entry.entry_id)
+
+    migrations: dict[str, tuple[str, str]] = {}
+    for device in coordinator.data.values():
+        for sensor in device.sensors:
+            new_unique_id = f"{device.id}_{sensor.id}"
+            migration = (new_unique_id, device.id)
+            migrations.setdefault(f"{device.external_id}_{sensor.id}", migration)
+            migrations.setdefault(new_unique_id, migration)
+
+    device_migrations: dict[str, str] = {}
+    for entity_entry in entity_entries:
+        if not (registry_migration := migrations.get(entity_entry.unique_id)):
+            continue
+        new_unique_id, device_id = registry_migration
+        if entity_entry.device_id:
+            device_migrations.setdefault(entity_entry.device_id, device_id)
+        if entity_entry.unique_id != new_unique_id:
+            entity_registry.async_update_entity(
+                entity_entry.entity_id, new_unique_id=new_unique_id
+            )
+
+    device_registry = dr.async_get(hass)
+    for registry_device_id, tibber_device_id in device_migrations.items():
+        registry_device = device_registry.async_get(registry_device_id)
+        if (
+            registry_device
+            and (DOMAIN, tibber_device_id) not in registry_device.identifiers
+        ):
+            device_registry.async_update_device(
+                registry_device_id,
+                new_identifiers={(DOMAIN, tibber_device_id)},
+            )
 
 
 @dataclass
@@ -172,6 +218,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: TibberConfigEntry) -> bo
     coordinator = TibberDataAPICoordinator(hass, entry)
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data.data_api_coordinator = coordinator
+    _migrate_data_api_registry_entries(hass, entry, coordinator)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
