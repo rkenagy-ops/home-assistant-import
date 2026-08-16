@@ -272,13 +272,12 @@ class EsphomeClimateEntity(EsphomeEntity[ClimateInfo, ClimateState], ClimateEnti
     @override
     def target_temperature(self) -> float | None:
         """Return the temperature we try to reach."""
-        if (
-            not self._feature_flags
+        if not (
+            self._feature_flags
             & (
                 ClimateFeature.REQUIRES_TWO_POINT_TARGET_TEMPERATURE
                 | ClimateFeature.SUPPORTS_TWO_POINT_TARGET_TEMPERATURE
             )
-            and self.hvac_mode != HVACMode.AUTO
         ):
             return self._state.target_temperature
         if self.hvac_mode == HVACMode.HEAT:
