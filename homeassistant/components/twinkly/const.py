@@ -17,3 +17,6 @@ DEV_PROFILE_RGBW = "RGBW"
 
 # Minimum version required to support effects
 MIN_EFFECT_VERSION = "2.7.1"
+
+# The library default of 3 seconds is too short for a device waking its radio.
+DEVICE_TIMEOUT = 10
