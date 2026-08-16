@@ -1678,6 +1678,9 @@ nettigo-air-monitor==5.0.0
 # homeassistant.components.neurio_energy
 neurio==0.3.1
 
+# homeassistant.components.nexblue
+nexblue-api==0.1.2
+
 # homeassistant.components.nexia
 nexia==2.13.0
 
