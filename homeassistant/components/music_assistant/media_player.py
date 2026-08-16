@@ -21,7 +21,7 @@ from music_assistant_models.event import MassEvent
 from music_assistant_models.media_items import ItemMapping, MediaItemType, Track
 from music_assistant_models.player_queue import PlayerQueue
 
-from homeassistant.components import media_source
+from homeassistant.components import media_source, tts
 from homeassistant.components.media_player import (
     ATTR_MEDIA_EXTRA,
     BrowseMedia,
@@ -36,6 +36,7 @@ from homeassistant.components.media_player import (
     SearchMediaQuery,
     async_process_play_media_url,
 )
+from homeassistant.components.tts import DOMAIN as TTS_DOMAIN
 from homeassistant.const import ATTR_NAME, STATE_OFF, Platform
 from homeassistant.core import HomeAssistant, ServiceResponse
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
@@ -549,12 +550,33 @@ class MusicAssistantPlayer(MusicAssistantEntity, MediaPlayerEntity):
     @catch_musicassistant_error
     async def _async_handle_play_announcement(
         self,
-        url: str,
+        url: str | None = None,
+        message: str | None = None,
         use_pre_announce: bool | None = None,
         pre_announce_url: str | None = None,
         announce_volume: int | None = None,
     ) -> None:
         """Send the play_announcement command to the media player."""
+        if message is not None:
+            # tts is an after_dependency, so it may not be set up at all
+            if (
+                TTS_DOMAIN not in self.hass.config.components
+                or tts.async_default_engine(self.hass) is None
+            ):
+                raise ServiceValidationError(
+                    translation_domain=DOMAIN,
+                    translation_key="tts_engine_not_available",
+                )
+            # let Home Assistant render the message with its own text-to-speech
+            # setup, so the announcement follows the user's TTS configuration
+            sourced_media = await media_source.async_resolve_media(
+                self.hass,
+                tts.generate_media_source_id(self.hass, message),
+                self.entity_id,
+            )
+            url = async_process_play_media_url(self.hass, sourced_media.url)
+        if TYPE_CHECKING:
+            assert url is not None
         await self.mass.players.play_announcement(
             self.player_id,
             url,
