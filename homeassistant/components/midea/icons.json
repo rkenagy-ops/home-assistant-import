@@ -1,0 +1,39 @@
+{
+  "entity": {
+    "sensor": {
+      "error_ed": {
+        "default": "mdi:alert-box"
+      },
+      "filter_life": {
+        "default": "mdi:toilet"
+      },
+      "filter_life_level": {
+        "default": "mdi:toilet"
+      },
+      "hcho": {
+        "default": "mdi:molecule"
+      },
+      "in_tds": {
+        "default": "mdi:water"
+      },
+      "indoor_fan_speed": {
+        "default": "mdi:fan"
+      },
+      "mode": {
+        "default": "mdi:auto-mode"
+      },
+      "out_tds": {
+        "default": "mdi:water-plus"
+      },
+      "pmv": {
+        "default": "mdi:thermometer-lines"
+      },
+      "tank_level": {
+        "default": "mdi:cup-water"
+      },
+      "target_indoor_fan_speed": {
+        "default": "mdi:fan-clock"
+      }
+    }
+  }
+}
