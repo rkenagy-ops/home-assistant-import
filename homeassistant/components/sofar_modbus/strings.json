@@ -1,0 +1,35 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "[%key:common::config_flow::abort::already_configured_device%]"
+    },
+    "error": {
+      "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
+      "unrecognized_inverter": "The device answered, but its serial number doesn't match a known Sofar model."
+    },
+    "step": {
+      "user": {
+        "data": {
+          "host": "[%key:common::config_flow::data::host%]",
+          "modbus_addr": "Modbus unit ID",
+          "port": "[%key:common::config_flow::data::port%]",
+          "read_eps": "Poll EPS / backup registers"
+        },
+        "data_description": {
+          "host": "The hostname or IP address of the inverter, or of the Modbus TCP bridge it's connected through.",
+          "modbus_addr": "The inverter's Modbus unit/slave ID.",
+          "port": "The Modbus TCP port to connect on.",
+          "read_eps": "Also poll the EPS (backup power) register block, for inverters with EPS wiring."
+        },
+        "description": "Connect over Modbus TCP. The inverter model and register map are detected automatically from its serial number."
+      }
+    }
+  },
+  "entity": {
+    "switch": {
+      "active_power_control_enabled": {
+        "name": "Active power control"
+      }
+    }
+  }
+}
