@@ -113,9 +113,9 @@
         "name": "DHW mode",
         "state": {
           "auto": "[%key:common::state::auto%]",
-          "boost": "[%key:component::climate::entity_component::_::state_attributes::preset_mode::state::boost%]",
-          "comfort": "[%key:component::climate::entity_component::_::state_attributes::preset_mode::state::comfort%]",
-          "eco": "[%key:component::climate::entity_component::_::state_attributes::preset_mode::state::eco%]",
+          "boost": "Boost",
+          "comfort": "Comfort",
+          "eco": "Eco",
           "off": "[%key:common::state::off%]"
         }
       },
@@ -305,6 +305,11 @@
       "relay": {
         "name": "Relay"
       }
+    },
+    "water_heater": {
+      "dhw_temperature": {
+        "name": "Domestic hot water"
+      }
     }
   },
   "exceptions": {
@@ -329,8 +334,14 @@
     "set_schedule_first": {
       "message": "Failed setting HVACMode, set a schedule first."
     },
+    "temperature_out_of_range": {
+      "message": "Temperature {temperature} is out of range ({min_temp} - {max_temp})"
+    },
     "unsupported_firmware": {
       "message": "[%key:component::plugwise::config::error::unsupported%]"
+    },
+    "unsupported_operation_mode": {
+      "message": "Operation mode {op_mode} is not supported"
     }
   }
 }
