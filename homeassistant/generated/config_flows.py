@@ -397,6 +397,7 @@ FLOWS = {
         "jvc_projector",
         "kaleidescape",
         "karakeep",
+        "keba_p40",
         "keenetic_ndms2",
         "kegtron",
         "keymitt_ble",
