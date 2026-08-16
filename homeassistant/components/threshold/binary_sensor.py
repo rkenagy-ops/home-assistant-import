@@ -55,6 +55,7 @@ from .const import (
     POSITION_UNKNOWN,
     TYPE_LOWER,
     TYPE_RANGE,
+    TYPE_RANGE_INVERTED,
     TYPE_UPPER,
 )
 
@@ -154,7 +155,9 @@ async def async_setup_platform(
 def _threshold_type(lower: float | None, upper: float | None) -> str:
     """Return the type of threshold this sensor represents."""
     if lower is not None and upper is not None:
-        return TYPE_RANGE
+        if lower <= upper:
+            return TYPE_RANGE
+        return TYPE_RANGE_INVERTED
     if lower is not None:
         return TYPE_LOWER
     return TYPE_UPPER
@@ -321,6 +324,24 @@ class ThresholdSensor(BinarySensorEntity):
             ):
                 self._state_position = POSITION_IN_RANGE
                 self._attr_is_on = True
+            return
+
+        if self.threshold_type == TYPE_RANGE_INVERTED:
+            if self._attr_is_on is None:
+                self._attr_is_on = False
+                self._state_position = POSITION_IN_RANGE
+
+            if below(self.sensor_value, self._threshold_upper):
+                self._state_position = POSITION_BELOW
+                self._attr_is_on = True
+            if above(self.sensor_value, self._threshold_lower):
+                self._state_position = POSITION_ABOVE
+                self._attr_is_on = True
+            elif above(self.sensor_value, self._threshold_upper) and below(
+                self.sensor_value, self._threshold_lower
+            ):
+                self._state_position = POSITION_IN_RANGE
+                self._attr_is_on = False
             return
 
     @callback
