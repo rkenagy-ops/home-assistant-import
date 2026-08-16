@@ -302,6 +302,7 @@ FLOWS = {
         "govee_light_local",
         "gpsd",
         "gpslogger",
+        "grandstream_home",
         "gree",
         "green_planet_energy",
         "greencell",
