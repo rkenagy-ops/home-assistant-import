@@ -1,7 +1,10 @@
 """Platform for the opengarage.io cover component."""
 
+import asyncio
 import logging
 from typing import Any, cast, override
+
+import aiohttp
 
 from homeassistant.components.cover import (
     CoverDeviceClass,
@@ -44,6 +47,8 @@ class OpenGarageCover(OpenGarageEntity, CoverEntity):
         """Initialize the cover."""
         self._state: str | None = None
         self._state_before_move: str | None = None
+        self._move_pending = False
+        self._move_lock = asyncio.Lock()
 
         super().__init__(coordinator, device_id)
 
@@ -74,20 +79,26 @@ class OpenGarageCover(OpenGarageEntity, CoverEntity):
     @override
     async def async_close_cover(self, **kwargs: Any) -> None:
         """Close the cover."""
-        if self._state in [CoverState.CLOSED, CoverState.CLOSING]:
-            return
-        self._state_before_move = self._state
-        self._state = CoverState.CLOSING
-        await self._push_button()
+        async with self._move_lock:
+            if self._state in [CoverState.CLOSED, CoverState.CLOSING]:
+                return
+            self._state_before_move = self._state
+            self._move_pending = True
+            self._state = CoverState.CLOSING
+            self.async_write_ha_state()
+            await self._push_button()
 
     @override
     async def async_open_cover(self, **kwargs: Any) -> None:
         """Open the cover."""
-        if self._state in [CoverState.OPEN, CoverState.OPENING]:
-            return
-        self._state_before_move = self._state
-        self._state = CoverState.OPENING
-        await self._push_button()
+        async with self._move_lock:
+            if self._state in [CoverState.OPEN, CoverState.OPENING]:
+                return
+            self._state_before_move = self._state
+            self._move_pending = True
+            self._state = CoverState.OPENING
+            self.async_write_ha_state()
+            await self._push_button()
 
     @callback
     @override
@@ -96,25 +107,47 @@ class OpenGarageCover(OpenGarageEntity, CoverEntity):
         status = self.coordinator.data
 
         state = STATES_MAP.get(status.get("door"))  # type: ignore[arg-type]
-        if self._state_before_move is not None:
+        if self._move_pending:
             if self._state_before_move != state:
                 self._state = state
-                self._state_before_move = None
+                self._move_pending = False
         else:
             self._state = state
 
+    @property
+    @override
+    def current_cover_position(self) -> int | None:
+        """Return current position of cover (0=closed, 100=open)."""
+        if self._state == CoverState.CLOSED:
+            return 0
+        if self._state == CoverState.OPEN:
+            return 100
+        return None
+
     async def _push_button(self):
         """Send commands to API."""
-        result = await self.coordinator.open_garage_connection.push_button()
-        if result is None:
-            _LOGGER.error("Unable to connect to OpenGarage device")
+        try:
+            result = await self.coordinator.open_garage_connection.push_button()
+        except aiohttp.ClientError, TimeoutError:
+            self._restore_state_before_move()
+            raise
+
         if result == 1:
             return
 
-        if result == 2:
+        if result is None:
+            _LOGGER.error("Unable to connect to OpenGarage device")
+        elif result == 2:
             _LOGGER.error("Unable to control %s: Device key is incorrect", self.name)
-        elif result > 2:
+        else:
             _LOGGER.error("Unable to control %s: Error code %s", self.name, result)
 
+        self._restore_state_before_move()
+
+    def _restore_state_before_move(self) -> None:
+        """Restore the state prior to this command, unless the coordinator already confirmed it."""
+        if not self._move_pending:
+            return
         self._state = self._state_before_move
-        self._state_before_move = None
+        self._move_pending = False
+        self.async_write_ha_state()
