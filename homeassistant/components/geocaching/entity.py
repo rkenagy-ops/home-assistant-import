@@ -2,7 +2,7 @@
 
 from typing import cast
 
-from geocachingapi.models import GeocachingCache
+from geocachingapi.models import GeocachingCache, GeocachingTrackable
 
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -27,7 +27,8 @@ class GeocachingCacheEntity(GeocachingBaseEntity):
     ) -> None:
         """Initialize the Geocaching cache entity."""
         super().__init__(coordinator)
-        self.cache = cache
+
+        self._reference_code = cache.reference_code
 
         # A device can have multiple entities, and for a cache
         # which requires multiple entities we want to group them
@@ -38,4 +39,47 @@ class GeocachingCacheEntity(GeocachingBaseEntity):
             identifiers={(DOMAIN, cast(str, cache.reference_code))},
             entry_type=DeviceEntryType.SERVICE,
             manufacturer=cache.owner.username,
+        )
+
+    @property
+    def cache(self) -> GeocachingCache:
+        """Return the latest cache data."""
+        for cache in self.coordinator.data.tracked_caches:
+            if cache.reference_code == self._reference_code:
+                return cache
+
+        raise RuntimeError(
+            f"Cache {self._reference_code} is no longer available in coordinator data"
+        )
+
+
+class GeocachingTrackableEntity(GeocachingBaseEntity):
+    """Base class for Geocaching trackable entities."""
+
+    def __init__(
+        self,
+        coordinator: GeocachingDataUpdateCoordinator,
+        trackable: GeocachingTrackable,
+    ) -> None:
+        """Initialize the Geocaching trackable entity."""
+        super().__init__(coordinator)
+
+        self._reference_code = trackable.reference_code
+
+        self._attr_device_info = DeviceInfo(
+            name=f"Trackable {trackable.name}",
+            identifiers={(DOMAIN, cast(str, trackable.reference_code))},
+            entry_type=DeviceEntryType.SERVICE,
+            manufacturer="Groundspeak, Inc.",
+        )
+
+    @property
+    def trackable(self) -> GeocachingTrackable:
+        """Return the latest trackable data."""
+        for trackable in self.coordinator.data.trackables.values():
+            if trackable.reference_code == self._reference_code:
+                return trackable
+
+        raise RuntimeError(
+            f"Trackable {self._reference_code} is no longer available in coordinator data"
         )
